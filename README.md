@@ -1,3 +1,13 @@
+---
+title: DarkHorse
+emoji: 🐎
+colorFrom: blue
+colorTo: black
+sdk: docker
+pinned: false
+---
+
+
 # DarkGuard: The Consumer Protection Environment
 
 **DarkGuard** is a real-world OpenEnv environment where an AI agent must help a consumer safely complete everyday digital tasks — free trial signup, product checkout, and subscription cancellation — while detecting and avoiding manipulative interface traps (dark patterns).
