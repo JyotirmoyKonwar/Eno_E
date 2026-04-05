@@ -1,27 +1,28 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 """
-Data models for the Rl Env Environment.
+DarkGuard — Root-level model re-exports.
 
-The RL_Env environment is a simple test environment that echoes back messages.
+Exposes DarkGuard typed models at the package root for backward
+compatibility with existing imports (e.g. from models import ...).
 """
 
-from openenv.core.env_server.types import Action, Observation
-from pydantic import Field
+try:
+    from src.darkguard.models import (
+        DarkGuardAction,
+        DarkGuardObservation,
+        DarkGuardState,
+        UIElement,
+    )
+except ImportError:
+    from darkguard.models import (  # type: ignore[no-redef]
+        DarkGuardAction,
+        DarkGuardObservation,
+        DarkGuardState,
+        UIElement,
+    )
 
-
-class RlEnvAction(Action):
-    """Action for the Rl Env environment - just a message to echo."""
-
-    message: str = Field(..., description="Message to echo back")
-
-
-class RlEnvObservation(Observation):
-    """Observation from the Rl Env environment - the echoed message."""
-
-    echoed_message: str = Field(default="", description="The echoed message")
-    message_length: int = Field(default=0, description="Length of the echoed message")
+__all__ = [
+    "DarkGuardAction",
+    "DarkGuardObservation",
+    "DarkGuardState",
+    "UIElement",
+]

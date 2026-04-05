@@ -1,255 +1,91 @@
----
-title: Rl Env Environment Server
-emoji: 🎧
-colorFrom: gray
-colorTo: gray
-sdk: docker
-pinned: false
-app_port: 8000
-base_path: /web
-tags:
-  - openenv
----
+# DarkGuard: The Consumer Protection Environment
 
-# Rl Env Environment
+**DarkGuard** is a real-world OpenEnv environment where an AI agent must help a consumer safely complete everyday digital tasks — free trial signup, product checkout, and subscription cancellation — while detecting and avoiding manipulative interface traps (dark patterns).
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+## 1. What is DarkGuard?
+DarkGuard simulates digital product flows with embedded deceptive design patterns. An agent must complete a stated user goal (like buying a ticket) while avoiding hidden fees, fake urgency, preselected add-ons, and cancellation mazes. Difficulty is determined entirely by **detection complexity**: how many steps it takes to reveal the trap, how much state comparison is required, and how many interacting traps are combined.
 
-## Quick Start
+## 2. Why it matters
+The FTC and various international bodies (like India's CCPA) regulate dark patterns. Agents trained in this environment can protect consumers by performing safe navigation of tricky interfaces, saving users money and avoiding unwanted subscriptions.
 
-The simplest way to use the Rl Env environment is through the `RlEnvEnv` class:
+## 3. Action Space
+The agent has a discrete semantic action space (7 types) mapping to common web interactions:
 
-```python
-from RL_Env import RlEnvAction, RlEnvEnv
+| Action Type | Description |
+|---|---|
+| `click` | Advance flow or trigger transition (requires `element_id`) |
+| `toggle` | Flip a checkbox or switch (requires `element_id`) |
+| `type` | Fill a text field (requires `element_id` and `value`) |
+| `inspect` | Reveal hidden metadata on an element (requires `element_id`) |
+| `go_back` | Return to the previous screen |
+| `submit` | Commit current form state |
+| `flag` | Mark an element as suspicious (requires `element_id` and `note`) |
 
-try:
-    # Create environment from Docker image
-    RL_Envenv = RlEnvEnv.from_docker_image("RL_Env-env:latest")
+## 4. Observation Space
+At each step, the environment returns a rich JSON observation:
 
-    # Reset
-    result = RL_Envenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
+| Field | Type | Description |
+|---|---|---|
+| `episode_id` | str | Unique identifier for the current episode |
+| `task_id` | str | Current active task |
+| `step`, `max_steps` | int | Current step and maximum allowed steps |
+| `screen_id`, `screen_title`| str | Current screen identifier and title |
+| `user_goal` | str | Plain English goal the user wants completed |
+| `elements` | list | List of visible `UIElement` objects (id, type, label, state) |
+| `event_log` | list | History of actions and events taken |
+| `account_state`| dict | Key variables (e.g. `charged: 0`, `subscribed: False`) |
+| `step_reward` | float | Reward received on previous step |
+| `cumulative_reward` | float | Running total of reward |
 
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
+## 5. Reward Function
+Reward is dense across the trajectory, clipped to `[-0.20, +0.20]` per step:
+- `+0.05`: `inspect()` reveals hidden harmful metadata
+- `+0.08`: comparing price/state discrepancy across screens
+- `+0.12`: taking protective action before irreversible harm (e.g. unchecking auto-renew)
+- `+0.06`: goal progress (advancing on the correct path)
+- `-0.03`: repeated identical action or no-op
+- `-0.05`: submit while a suspicious unflagged trap element is active
+- `-0.10`: entering a harmful account state
+- `-0.08`: explicitly flagging a benign element
 
-    for msg in messages:
-        result = RL_Envenv.step(RlEnvAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
+### Final Grader Score
+S = 0.35P + 0.25D + 0.20G + 0.15E + 0.05X
+where:
+- P (Prevention): Avoided harmful outcome
+- D (Detection): Flagged traps accurately vs false positives
+- G (Goal completion): Achieved user's goal
+- E (Evidence): Gathered proof via `inspect()` before acting
+- X (Efficiency): Not wasting turns
 
-finally:
-    # Always clean up
-    RL_Envenv.close()
-```
+## 6. Tasks
+1. **Easy (`easy_safe_signup`)** - Complete a free trial signup without enabling unwanted auto-renewal. One visible trap, no cross-screen comparison needed. Expected baseline: ~0.62.
+2. **Medium (`medium_fair_checkout`)** - Purchase a product at the advertised price. Two traps (drip pricing + add-on) revealed only by comparing price across 3-4 screens. Expected baseline: ~0.41.
+3. **Hard (`hard_cancel_maze`)** - Cancel a subscription through a multi-screen retention funnel with 3 combined traps and procedural friction. Expected baseline: ~0.22.
 
-That's it! The `RlEnvEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
+## 7. Setup & Usage
 
-## Building the Docker Image
-
-Before using the environment, you need to build the Docker image:
-
+### Local Usage
 ```bash
-# From project root
-docker build -t RL_Env-env:latest -f server/Dockerfile .
+uv sync
+source .venv/bin/activate
+# Run standard baseline inference
+python inference.py
 ```
 
-## Deploying to Hugging Face Spaces
-
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
-
+### Docker
 ```bash
-# From the environment directory (where openenv.yaml is located)
-openenv push
-
-# Or specify options
-openenv push --namespace my-org --private
+docker build -t openenv-darkguard .
+docker run -p 8000:8000 openenv-darkguard
 ```
 
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
-
-### Prerequisites
-
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
-
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
-
+### Validation
 ```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
+# Verify openenv spec
+openenv validate .
 ```
 
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
-
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
-
-## Environment Details
-
-### Action
-**RlEnvAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**RlEnvObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a Rl Env environment server running, you can connect directly:
-
-```python
-from RL_Env import RlEnvEnv
-
-# Connect to existing server
-RL_Envenv = RlEnvEnv(base_url="<ENV_HTTP_URL_HERE>")
-
-# Use as normal
-result = RL_Envenv.reset()
-result = RL_Envenv.step(RlEnvAction(message="Hello!"))
-```
-
-Note: When connecting to an existing server, `RL_Envenv.close()` will NOT stop the server.
-
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from RL_Env import RlEnvAction, RlEnvEnv
-
-# Connect with context manager (auto-connects and closes)
-with RlEnvEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(RlEnvAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
-```
-
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
-
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    RlEnvEnvironment,  # Pass class, not instance
-    RlEnvAction,
-    RlEnvObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from RL_Env import RlEnvAction, RlEnvEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with RlEnvEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(RlEnvAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
-
-```bash
-# From the server directory
-python3 server/RL_Env_environment.py
-```
-
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
-
-## Project Structure
-
-```
-RL_Env/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # RlEnvEnv client
-├── models.py              # Action and Observation models
-└── server/
-    ├── __init__.py        # Server module exports
-    ├── RL_Env_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
-```
+## 8. Baseline Scores
+Using `Qwen/Qwen2.5-72B-Instruct` via HTTP API routing: 
+- **Easy**: ~0.62
+- **Medium**: ~0.41
+- **Hard**: ~0.22

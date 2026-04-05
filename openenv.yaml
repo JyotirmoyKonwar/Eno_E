@@ -1,7 +1,36 @@
 spec_version: 1
-name: RL_Env
+name: darkguard
+version: "1.0.0"
 type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
-
+description: >
+  Consumer protection environment for safe navigation of deceptive digital
+  product flows. An agent must complete real user goals while detecting and
+  avoiding hidden fees, fake urgency, preselected add-ons, and cancellation
+  traps. Difficulty scales with detection complexity, not pattern type.
+tags:
+  - openenv
+  - consumer-protection
+  - dark-patterns
+  - real-world
+  - long-horizon
+tasks:
+  - id: easy_safe_signup
+    difficulty: easy
+    description: "Complete a free trial signup without enabling unwanted auto-renewal. One visible trap, no cross-screen comparison needed."
+    max_steps: 15
+  - id: medium_fair_checkout
+    difficulty: medium
+    description: "Purchase a product at the advertised price. Trap only revealed by comparing price across 3-4 screens."
+    max_steps: 25
+  - id: hard_cancel_maze
+    difficulty: hard
+    description: "Cancel a subscription through a multi-screen retention funnel with 3 combined traps and procedural friction."
+    max_steps: 40
+baseline:
+  script: inference.py
+  model_env: MODEL_NAME
+  api_base_env: API_BASE_URL
+  token_env: HF_TOKEN

@@ -1,11 +1,5 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""DarkGuard environment server components."""
 
-"""Rl Env environment server components."""
+from .darkguard_environment import DarkGuardEnvironment
 
-from .RL_Env_environment import RlEnvEnvironment
-
-__all__ = ["RlEnvEnvironment"]
+__all__ = ["DarkGuardEnvironment"]

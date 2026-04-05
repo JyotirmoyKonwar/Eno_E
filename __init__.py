@@ -1,16 +1,14 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""DarkGuard — Consumer Protection RL Environment for OpenEnv."""
 
-"""Rl Env Environment."""
-
-from .client import RlEnvEnv
-from .models import RlEnvAction, RlEnvObservation
+try:
+    from src.darkguard.env import DarkGuardEnv
+    from src.darkguard.models import DarkGuardAction, DarkGuardObservation, DarkGuardState
+except ImportError:
+    pass
 
 __all__ = [
-    "RlEnvAction",
-    "RlEnvObservation",
-    "RlEnvEnv",
+    "DarkGuardEnv",
+    "DarkGuardAction",
+    "DarkGuardObservation",
+    "DarkGuardState",
 ]
