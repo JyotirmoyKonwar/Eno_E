@@ -1,10 +1,12 @@
 ---
-title: DarkHorse
-emoji: 🐎
-colorFrom: blue
-colorTo: black
+title: DarkGuard
+emoji: 🛡️
+colorFrom: yellow
+colorTo: red
 sdk: docker
 pinned: false
+tags:
+- openenv
 ---
 
 

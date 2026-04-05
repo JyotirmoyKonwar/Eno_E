@@ -4,7 +4,7 @@ version: "1.0.0"
 type: space
 runtime: fastapi
 app: server.app:app
-port: 8000
+port: 7860
 description: >
   Consumer protection environment for safe navigation of deceptive digital
   product flows. An agent must complete real user goals while detecting and
