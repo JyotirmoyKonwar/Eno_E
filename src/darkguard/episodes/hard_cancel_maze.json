@@ -48,7 +48,7 @@
     "subscription_active": false,
     "cancellation_confirmed": true
   },
-  "relevant_elements_for_evidence": ["countdown_timer", "dont_care_btn", "cancel_path"],
+  "relevant_elements_for_evidence": ["dont_care_btn", "countdown_timer", "more_options_link"],
   "correct_path": [
     "account_home", "account_settings", "billing", "manage_plan",
     "more_options", "retention_offer", "cancellation_survey", "final_confirmation"

@@ -240,6 +240,7 @@ class DarkGuardEnv(Environment):
             self._finalise_episode()
 
         # ---- Compute step reward ----
+        is_terminal_submit = (action_type in ("submit", "click") and self._done)
         step_reward = compute_step_reward(
             action_type=action_type,
             element_id=element_id,
@@ -255,6 +256,7 @@ class DarkGuardEnv(Environment):
             flags_submitted=self._flags_submitted,
             inspect_result=inspect_result,
             flag_note=action.note,
+            is_terminal_submit=is_terminal_submit,
         )
         self._cumulative_reward = round(self._cumulative_reward + step_reward, 4)
         self._event_log.append(
@@ -314,7 +316,7 @@ class DarkGuardEnv(Environment):
             self._screen_history.pop()
             self._screen_id = self._screen_history[-1]
         else:
-            self._event_log.append("  [GO_BACK] Already at first screen.")
+            self._event_log.append("  [GO_BACK] Already at first screen — wasted step.")
 
     def _handle_click_or_submit(self, action_type: str, element_id: Optional[str]) -> None:
         # Look up transition
@@ -380,8 +382,12 @@ class DarkGuardEnv(Environment):
             )
 
         elif task == "medium_fair_checkout":
+            config = self._episode_config
+            ticket = config.get("ticket_price", 500)
+            fee = config.get("platform_fee", 75)
+            insurance_cost = config.get("insurance_cost", 50)
             insurance = self._element_states.get("seat_insurance_toggle", True)
-            total = 500 + 75 + (50 if insurance else 0)  # always includes platform fee
+            total = ticket + fee + (insurance_cost if insurance else 0)
             self._account_state["ticket_purchased"] = True
             self._account_state["total_charged"] = total
             self._account_state["seat_insurance"] = insurance

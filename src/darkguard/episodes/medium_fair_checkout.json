@@ -36,7 +36,7 @@
     "total_charged": 500,
     "ticket_purchased": true
   },
-  "max_fair_charge": 500,
+  "max_fair_charge": 575,
   "required_screens_visited": ["event_page", "cart", "seat_selection", "payment_review"],
   "relevant_elements_for_evidence": ["price_label", "total_label"]
 }

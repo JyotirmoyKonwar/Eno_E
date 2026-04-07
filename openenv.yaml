@@ -33,4 +33,4 @@ baseline:
   script: inference.py
   model_env: MODEL_NAME
   api_base_env: API_BASE_URL
-  token_env: HF_TOKEN
+  token_env: OPENAI_API_KEY

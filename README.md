@@ -87,7 +87,7 @@ python inference.py
 ### Docker
 ```bash
 docker build -t openenv-darkguard .
-docker run -p 8000:8000 openenv-darkguard
+docker run -p 7860:7860 openenv-darkguard
 ```
 
 ### Validation

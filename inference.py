@@ -6,12 +6,13 @@ Runs a language model agent against all 3 DarkGuard tasks and emits
 structured stdout logs in the mandatory [START] / [STEP] / [END] format.
 
 Required environment variables:
-    API_BASE_URL   LLM API endpoint  (default: https://router.huggingface.co/v1)
-    MODEL_NAME     Model identifier  (default: Qwen/Qwen2.5-72B-Instruct)
-    HF_TOKEN       HuggingFace / API key
+    OPENAI_API_KEY  Primary API key (hackathon spec requirement)
+    API_BASE_URL    LLM API endpoint  (default: https://router.huggingface.co/v1)
+    MODEL_NAME      Model identifier  (default: Qwen/Qwen2.5-72B-Instruct)
+    HF_TOKEN        HuggingFace token (fallback if OPENAI_API_KEY is unset)
 
 Usage:
-    HF_TOKEN=hf_... MODEL_NAME=... python inference.py
+    OPENAI_API_KEY=sk-... MODEL_NAME=... python inference.py
 """
 
 import json
@@ -26,7 +27,7 @@ from openai import OpenAI
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME",   "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN     = os.getenv("HF_TOKEN",     os.getenv("OPENAI_API_KEY", ""))
+HF_TOKEN     = os.getenv("OPENAI_API_KEY", os.getenv("HF_TOKEN", ""))
 
 BENCHMARK    = "darkguard"
 TEMPERATURE  = 0.3
@@ -66,7 +67,7 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps}"
-        f" score={score:.3f} rewards={rewards_str}",
+        f" score={score:.2f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -141,6 +142,7 @@ def get_agent_action(
             temperature=TEMPERATURE,
             max_tokens=MAX_TOKENS,
             response_format={"type": "json_object"},
+            seed=42,
         )
         text = (completion.choices[0].message.content or "{}").strip()
         return json.loads(text)
@@ -217,7 +219,7 @@ def run_task(client: OpenAI, env, task_id: str) -> Dict[str, Any]:
 
 def main() -> None:
     if not HF_TOKEN:
-        print("[WARN] HF_TOKEN / OPENAI_API_KEY not set — LLM calls may fail.", file=sys.stderr)
+        print("[WARN] OPENAI_API_KEY / HF_TOKEN not set — LLM calls may fail.", file=sys.stderr)
 
     client = OpenAI(api_key=HF_TOKEN or "dummy", base_url=API_BASE_URL)
 
@@ -226,9 +228,17 @@ def main() -> None:
     env = DarkGuardEnv()
 
     results = []
-    for task_id in TASKS:
-        result = run_task(client, env, task_id)
-        results.append(result)
+    try:
+        for task_id in TASKS:
+            result = run_task(client, env, task_id)
+            results.append(result)
+    finally:
+        # env is in-process, no container — but call close() per OpenEnv spec
+        if hasattr(env, "close"):
+            try:
+                env.close()
+            except Exception:
+                pass
 
     # Summary to stderr (doesn't affect stdout log parsing)
     print("\n=== DarkGuard Baseline Summary ===", file=sys.stderr)
