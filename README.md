@@ -80,8 +80,8 @@ where:
 ```bash
 uv sync
 source .venv/bin/activate
-# Run standard baseline inference
-python inference.py
+# Run standard baseline inference (requires OPENAI_API_KEY)
+OPENAI_API_KEY=sk-... python inference.py
 ```
 
 ### Docker
@@ -94,6 +94,9 @@ docker run -p 7860:7860 openenv-darkguard
 ```bash
 # Verify openenv spec
 openenv validate .
+
+# Run pre-submission checks (URL is for local or hosted space)
+./validate-submission.sh http://localhost:7860
 ```
 
 ## 8. Baseline Scores
