@@ -1,0 +1,59 @@
+# Deploy monorepo subfolders to Hugging Face Spaces (not a full-repo git push).
+# Add repo secret: HF_TOKEN — a Hugging Face token with write access to Spaces.
+# https://huggingface.co/settings/tokens
+name: Deploy DarkGuard HF Spaces
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "darkguard-openenv/**"
+      - "darkguard-selfplay-trainer/**"
+      - ".github/workflows/deploy_hf_spaces.yml"
+      - "scripts/deploy_hf_space_folder.py"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hf-spaces-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-openenv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install huggingface_hub
+        run: pip install "huggingface_hub>=0.26.0"
+
+      - name: Upload darkguard-openenv → Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python scripts/deploy_hf_space_folder.py
+          --repo-id Jyo-K/darkguard-openenv
+          --folder darkguard-openenv
+          --message "Deploy darkguard-openenv from ${{ github.sha }}"
+
+  deploy-selfplay-trainer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install huggingface_hub
+        run: pip install "huggingface_hub>=0.26.0"
+
+      - name: Upload darkguard-selfplay-trainer → Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python scripts/deploy_hf_space_folder.py
+          --repo-id Jyo-K/darkguard-selfplay-trainer
+          --folder darkguard-selfplay-trainer
+          --message "Deploy selfplay trainer from ${{ github.sha }}"
