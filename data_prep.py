@@ -491,9 +491,10 @@ def llm_normalize(base: Dict[str, Any]) -> Dict[str, Any]:
             obj.setdefault("trap_categories", [canonicalize_category(base["subcategory"])])
             obj.setdefault("harm_types", infer_harm_types(base["subcategory"]))
 
-            if "consumer_sft" not in obj or "messages" not in obj["consumer_sft"]:
+            consumer_sft = obj.get("consumer_sft")
+            if not isinstance(consumer_sft, dict) or "messages" not in consumer_sft:
                 obj["consumer_sft"] = heuristic_normalize(base)["consumer_sft"]
-            if "designer_seed" not in obj:
+            if not isinstance(obj.get("designer_seed"), dict):
                 obj["designer_seed"] = heuristic_normalize(base)["designer_seed"]
 
             return obj
@@ -574,13 +575,6 @@ def to_designer_sft(common: Dict[str, Any]) -> Dict[str, Any]:
 # =========================================================
 
 def process_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    results = []
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
-        futures = [ex.submit(llm_normalize, r) for r in rows]
-        for base, fut in tqdm(zip(rows, as_completed(futures)), total=len(rows), desc="Normalizing"):
-            pass
-
-    # Need stable association, so do a second safer pass
     results = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         future_map = {ex.submit(llm_normalize, r): r for r in rows}

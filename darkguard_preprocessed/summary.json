@@ -1,0 +1,19 @@
+{
+  "sizes": {
+    "itsbaivab": 420,
+    "darkbench": 360,
+    "wipi": 180,
+    "total": 960
+  },
+  "use_llm": false,
+  "hf_router_model": null,
+  "outputs": {
+    "normalized": "darkguard_preprocessed/all_normalized.jsonl",
+    "consumer_all": "darkguard_preprocessed/all_consumer_sft.jsonl",
+    "designer_all": "darkguard_preprocessed/all_designer_sft.jsonl",
+    "consumer_train": "darkguard_preprocessed/consumer_train.jsonl",
+    "consumer_val": "darkguard_preprocessed/consumer_val.jsonl",
+    "designer_train": "darkguard_preprocessed/designer_train.jsonl",
+    "designer_val": "darkguard_preprocessed/designer_val.jsonl"
+  }
+}
