@@ -1,0 +1,14 @@
+name: darkguard-openenv
+title: DarkGuard OpenEnv
+description: |
+  OpenEnv environment for training consumer-side dark-pattern detection and avoidance.
+  Includes deterministic built-in deceptive UX tasks and supports externally supplied custom episodes.
+tags:
+  - reinforcement-learning
+  - openenv
+  - grpo
+  - dark-patterns
+  - verifier-based-rewards
+version: 0.1.0
+entrypoint: server.app:app
+license: mit
