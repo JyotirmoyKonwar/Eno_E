@@ -17,6 +17,8 @@ R_REPEAT_NOOP           = -0.03   # identical action twice in a row
 R_SUBMIT_UNFLAGGED_TRAP = -0.05   # submitted while suspicious unflagged element exists
 R_HARMFUL_STATE         = -0.10   # entered a harmful account state (charge, unwanted renew)
 R_BAD_FLAG              = -0.08   # flagged a benign element
+R_GOOD_FLAG             =  0.12   # correctly flagged a true trap
+R_SUBMIT_WITHOUT_EVIDENCE = -0.10 # submitted without any inspect evidence
 
 STEP_CLIP_HIGH =  0.20
 STEP_CLIP_LOW  = -0.20
@@ -63,6 +65,8 @@ def compute_step_reward(
     flags_submitted: List[Dict[str, Any]],
     inspect_result: Optional[Dict[str, Any]] = None,
     flag_note: Optional[str] = None,
+    flag_verdict: Optional[Dict[str, Any]] = None,
+    inspected_before_submit: bool = False,
     is_terminal_submit: bool = False,
 ) -> float:
     """
@@ -158,9 +162,20 @@ def compute_step_reward(
     # 7. Entered harmful account state (compared to previous)
     reward += _harmful_state_delta(account_state, prev_account_state, task_id)
 
-    # 8. Flagged a benign element → penalise
-    if action_type == "flag" and element_id in BENIGN_ELEMENTS:
-        reward += R_BAD_FLAG
+    # 8. Flag quality from oracle verdict
+    if action_type == "flag":
+        if flag_verdict is not None:
+            if flag_verdict.get("is_trap", False):
+                reward += R_GOOD_FLAG
+            else:
+                reward += R_BAD_FLAG
+        elif element_id in BENIGN_ELEMENTS:
+            # fallback if oracle verdict not passed
+            reward += R_BAD_FLAG
+
+    # 9. Overconfident submit (no evidence gathering first)
+    if is_terminal_submit and not inspected_before_submit:
+        reward += R_SUBMIT_WITHOUT_EVIDENCE
 
     return float(max(STEP_CLIP_LOW, min(STEP_CLIP_HIGH, reward)))
 

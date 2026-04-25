@@ -90,7 +90,7 @@ DECISION PROCESS:
 
 You MUST respond with a single JSON object (no markdown, no prose):
 {
-  "action_type": "<click|toggle|type|inspect|go_back|submit|flag>",
+  "action_type": "<click|toggle|inspect|flag|go_back|submit>",
   "element_id": "<element id or null>",
   "value": "<text value or null>",
   "note": "<reason for flag or null>"

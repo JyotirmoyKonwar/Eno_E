@@ -46,7 +46,6 @@ class DarkGuardAction(Action):
     action_type: Literal[
         "click",    # advance flow / trigger transition
         "toggle",   # flip a checkbox or switch
-        "type",     # fill a text field
         "inspect",  # reveal hidden element_metadata
         "go_back",  # return to previous screen
         "submit",   # commit current form state
@@ -87,7 +86,7 @@ class DarkGuardObservation(Observation):
     cumulative_reward: float = Field(default=0.0, description="Running reward total")
     available_actions: List[str] = Field(
         default_factory=lambda: [
-            "click", "toggle", "type", "inspect", "go_back", "submit", "flag"
+            "click", "toggle", "inspect", "flag", "go_back", "submit"
         ],
         description="Action types valid on this screen",
     )
@@ -109,6 +108,7 @@ class DarkGuardState(State):
     screens_visited: List[str] = Field(default_factory=list)
     cumulative_reward: float = Field(default=0.0)
     episode_score: Optional[float] = Field(default=None)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     ground_truth: Dict[str, Any] = Field(
         default_factory=dict,
         description="Ground-truth trap config (hidden from agent, exposed here for grader/tests)",

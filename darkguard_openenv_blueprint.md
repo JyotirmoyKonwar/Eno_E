@@ -124,14 +124,12 @@ class Action(BaseModel):
     action_type: Literal[
         "click",         # advance flow or trigger transition
         "toggle",        # flip a checkbox or switch
-        "type",          # fill a text field
         "inspect",       # reveal hidden metadata on an element
         "go_back",       # return to previous screen
         "submit",        # commit current form state
         "flag"           # mark an element as suspicious (with note)
     ]
     element_id: Optional[str] = None
-    value: Optional[str] = None      # used by "type"
     note: Optional[str] = None       # used by "flag"
 
 class Reward(BaseModel):

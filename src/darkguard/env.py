@@ -19,7 +19,9 @@ from openenv.core.env_server.types import State
 
 from .grader import compute_episode_score
 from .models import DarkGuardAction, DarkGuardObservation, DarkGuardState
+from .oracle import DarkGuardOracle
 from .rewards import compute_step_reward
+from .selfplay import apply_designer_actions, generate_designer_actions, update_elo
 from .screens import (
     TASK_INITIAL_SCREENS,
     element_exists,
@@ -126,6 +128,18 @@ class DarkGuardEnv(Environment):
         self._cumulative_reward: float = 0.0
         self._done: bool = False
         self._episode_score: Optional[float] = None
+        self._oracle = DarkGuardOracle()
+        self._self_play_enabled: bool = False
+        self._consumer_elo: float = 1200.0
+        self._designer_elo: float = 1200.0
+        self._episode_index: int = 0
+        self._role_swap_every: int = 10
+        self._roles = {"consumer": "consumer_agent", "designer": "designer_agent"}
+        self._designer_subtlety: int = 1
+        self._designer_actions: List[Dict[str, Any]] = []
+        self._label_overrides: Dict[str, str] = {}
+        self._friction_edges: set = set()
+        self._price_delta: int = 0
 
     # -----------------------------------------------------------------------
     # reset
@@ -136,6 +150,10 @@ class DarkGuardEnv(Environment):
         task_id: Optional[str] = None,
         seed: Optional[int] = None,
         episode_id: Optional[str] = None,
+        self_play: Optional[bool] = None,
+        designer_actions: Optional[List[Dict[str, Any]]] = None,
+        subtlety: int = 1,
+        role_swap_every: Optional[int] = None,
         **kwargs,
     ) -> DarkGuardObservation:
         """
@@ -167,6 +185,38 @@ class DarkGuardEnv(Environment):
         self._cumulative_reward = 0.0
         self._done = False
         self._episode_score = None
+        self._label_overrides = {}
+        self._friction_edges = set()
+        self._price_delta = 0
+
+        if self_play is not None:
+            self._self_play_enabled = bool(self_play)
+        if role_swap_every is not None and role_swap_every > 0:
+            self._role_swap_every = int(role_swap_every)
+
+        self._episode_index += 1
+        if self._self_play_enabled and self._episode_index % self._role_swap_every == 0:
+            self._roles["consumer"], self._roles["designer"] = self._roles["designer"], self._roles["consumer"]
+
+        self._designer_subtlety = max(1, min(5, int(subtlety)))
+        if self._self_play_enabled:
+            if designer_actions is None:
+                seeded_rng = random.Random(seed) if seed is not None else random.Random()
+                self._designer_actions = generate_designer_actions(self._designer_subtlety, seeded_rng)
+            else:
+                self._designer_actions = designer_actions
+            runtime = apply_designer_actions(
+                task_id=self._task_id,
+                episode_config=self._episode_config,
+                element_states=self._element_states,
+                designer_actions=self._designer_actions,
+                subtlety=self._designer_subtlety,
+            )
+            self._label_overrides = dict(runtime["label_overrides"])
+            self._friction_edges = set(runtime["friction_edges"])
+            self._price_delta = int(runtime["price_delta"])
+            if self._task_id == "medium_fair_checkout" and self._price_delta > 0:
+                self._episode_config["platform_fee"] = 75 + self._price_delta
 
         return self._build_observation(step_reward=0.0)
 
@@ -206,27 +256,36 @@ class DarkGuardEnv(Environment):
 
         # ---- Validate element exists (if element_id is given) ----
         inspect_result = None
+        flag_verdict: Optional[Dict[str, Any]] = None
+        inspected_before_submit = len(self._inspected_elements) > 0
         if element_id and action_type not in ("go_back", "submit", "flag"):
-            if not element_exists(
-                self._task_id, self._screen_id, element_id,
-                self._account_state, self._element_states
-            ):
-                self._event_log.append(
-                    f"Step {self._step_count}: Invalid action — element '{element_id}' not found on screen '{self._screen_id}'"
-                )
-                step_reward = -0.03  # small penalty for invalid actions
-                self._cumulative_reward = round(self._cumulative_reward + step_reward, 4)
-                return self._build_observation(step_reward=step_reward)
+            if self._screen_id == "friction_gate":
+                if element_id != "friction_continue_btn":
+                    self._event_log.append(
+                        f"Step {self._step_count}: Invalid action — only friction_continue_btn is allowed on friction_gate"
+                    )
+                    step_reward = -0.03
+                    self._cumulative_reward = round(self._cumulative_reward + step_reward, 4)
+                    return self._build_observation(step_reward=step_reward)
+            else:
+                if not element_exists(
+                    self._task_id, self._screen_id, element_id,
+                    self._account_state, self._element_states
+                ):
+                    self._event_log.append(
+                        f"Step {self._step_count}: Invalid action — element '{element_id}' not found on screen '{self._screen_id}'"
+                    )
+                    step_reward = -0.03  # small penalty for invalid actions
+                    self._cumulative_reward = round(self._cumulative_reward + step_reward, 4)
+                    return self._build_observation(step_reward=step_reward)
 
         # ---- Handle each action type ----
         if action_type == "inspect":
             inspect_result = self._handle_inspect(element_id)
         elif action_type == "toggle":
             self._handle_toggle(element_id)
-        elif action_type == "type":
-            self._handle_type(element_id, action.value)
         elif action_type == "flag":
-            self._handle_flag(element_id, action.note)
+            flag_verdict = self._handle_flag(element_id, action.note)
         elif action_type == "go_back":
             self._handle_go_back()
         elif action_type in ("click", "submit"):
@@ -256,6 +315,8 @@ class DarkGuardEnv(Environment):
             flags_submitted=self._flags_submitted,
             inspect_result=inspect_result,
             flag_note=action.note,
+            flag_verdict=flag_verdict,
+            inspected_before_submit=inspected_before_submit,
             is_terminal_submit=is_terminal_submit,
         )
         self._cumulative_reward = round(self._cumulative_reward + step_reward, 4)
@@ -296,20 +357,32 @@ class DarkGuardEnv(Environment):
             f"  [TOGGLE] {element_id}: {current} → {not current}"
         )
 
-    def _handle_type(self, element_id: Optional[str], value: Optional[str]) -> None:
-        if element_id:
-            self._element_states[f"typed_{element_id}"] = value or ""
-
-    def _handle_flag(self, element_id: Optional[str], note: Optional[str]) -> None:
+    def _handle_flag(self, element_id: Optional[str], note: Optional[str]) -> Optional[Dict[str, Any]]:
         if not element_id:
-            return
+            return None
+        metadata = get_element_metadata(
+            self._task_id, self._screen_id, element_id,
+            self._account_state, self._element_states
+        )
+        oracle_result = self._oracle.evaluate_flag(
+            episode_config=self._episode_config,
+            element_id=element_id,
+            element_metadata=metadata,
+        )
         self._flags_submitted.append({
             "element_id": element_id,
             "note": note,
             "screen_id": self._screen_id,
             "step": self._step_count,
+            "oracle_is_trap": oracle_result["is_trap"],
+            "oracle_confidence": oracle_result["confidence"],
+            "oracle_reason": oracle_result["reason"],
         })
-        self._event_log.append(f"  [FLAG] {element_id}: {note}")
+        self._event_log.append(
+            f"  [FLAG] {element_id}: {note} "
+            f"(oracle_is_trap={oracle_result['is_trap']} conf={oracle_result['confidence']:.2f})"
+        )
+        return oracle_result
 
     def _handle_go_back(self) -> None:
         if len(self._screen_history) > 1:
@@ -319,6 +392,16 @@ class DarkGuardEnv(Environment):
             self._event_log.append("  [GO_BACK] Already at first screen — wasted step.")
 
     def _handle_click_or_submit(self, action_type: str, element_id: Optional[str]) -> None:
+        if self._screen_id == "friction_gate":
+            if action_type == "click" and element_id == "friction_continue_btn":
+                next_screen = self._element_states.get("friction_return_screen")
+                if next_screen:
+                    self._screen_id = next_screen
+                    self._screen_history.append(next_screen)
+                    if next_screen not in self._screens_visited:
+                        self._screens_visited.append(next_screen)
+                return
+
         # Look up transition
         next_screen = get_transition(
             self._task_id, self._screen_id, action_type, element_id,
@@ -349,6 +432,17 @@ class DarkGuardEnv(Environment):
             return
 
         if next_screen and next_screen in self._get_all_screen_ids():
+            edge = f"{self._screen_id}_to_{next_screen}"
+            if edge in self._friction_edges:
+                self._element_states["friction_return_screen"] = next_screen
+                self._screen_id = "friction_gate"
+                self._screen_history.append("friction_gate")
+                if "friction_gate" not in self._screens_visited:
+                    self._screens_visited.append("friction_gate")
+                self._event_log.append(
+                    f"  [FRICTION] Designer inserted friction gate on edge {edge}"
+                )
+                return
             self._screen_id = next_screen
             self._screen_history.append(next_screen)
             if next_screen not in self._screens_visited:
@@ -362,7 +456,9 @@ class DarkGuardEnv(Environment):
         from .screens import TASK_SCREENS
         builder = TASK_SCREENS[self._task_id]
         screens = builder(self._account_state, self._element_states)
-        return set(screens.keys())
+        ids = set(screens.keys())
+        ids.add("friction_gate")
+        return ids
 
     # -----------------------------------------------------------------------
     # Terminal state: finalise episode
@@ -429,6 +525,13 @@ class DarkGuardEnv(Environment):
         }
         result = compute_episode_score(self._episode_config, agent_trace)
         self._episode_score = result["episode_score"]
+        if self._self_play_enabled:
+            consumer_score = float(self._episode_score or 0.0)
+            self._consumer_elo, self._designer_elo = update_elo(
+                consumer_elo=self._consumer_elo,
+                designer_elo=self._designer_elo,
+                consumer_score=consumer_score,
+            )
         self._event_log.append(
             f"  [SCORE] episode_score={self._episode_score} "
             f"P={result['P']} D={result['D']} G={result['G']} "
@@ -440,14 +543,31 @@ class DarkGuardEnv(Environment):
     # -----------------------------------------------------------------------
 
     def _build_observation(self, step_reward: float) -> DarkGuardObservation:
-        elements = get_elements_list(
-            self._task_id, self._screen_id,
-            self._account_state, self._element_states
-        )
-        screen_def = get_screen(
-            self._task_id, self._screen_id,
-            self._account_state, self._element_states
-        )
+        if self._screen_id == "friction_gate":
+            elements = [{
+                "id": "friction_continue_btn",
+                "type": "button",
+                "label": "Continue",
+                "visible": True,
+                "enabled": True,
+                "selected": False,
+            }]
+            screen_def = {"title": "One More Confirmation"}
+        else:
+            elements = get_elements_list(
+                self._task_id, self._screen_id,
+                self._account_state, self._element_states
+            )
+            screen_def = get_screen(
+                self._task_id, self._screen_id,
+                self._account_state, self._element_states
+            )
+
+        if self._label_overrides:
+            for element in elements:
+                override = self._label_overrides.get(element.get("id"))
+                if override:
+                    element["label"] = override
         return DarkGuardObservation(
             episode_id=self._episode_id,
             task_id=self._task_id,
@@ -466,6 +586,15 @@ class DarkGuardEnv(Environment):
             metadata={
                 "episode_score": self._episode_score,
                 "screens_visited": list(self._screens_visited),
+                "self_play": {
+                    "enabled": self._self_play_enabled,
+                    "episode_index": self._episode_index,
+                    "roles": dict(self._roles),
+                    "designer_subtlety": self._designer_subtlety,
+                    "designer_actions": list(self._designer_actions),
+                    "consumer_elo": round(self._consumer_elo, 3),
+                    "designer_elo": round(self._designer_elo, 3),
+                },
             },
         )
 
@@ -489,4 +618,13 @@ class DarkGuardEnv(Environment):
             cumulative_reward=self._cumulative_reward,
             episode_score=self._episode_score,
             ground_truth=deepcopy(self._episode_config),
+            metadata={
+                "self_play_enabled": self._self_play_enabled,
+                "episode_index": self._episode_index,
+                "consumer_elo": self._consumer_elo,
+                "designer_elo": self._designer_elo,
+                "roles": dict(self._roles),
+                "designer_subtlety": self._designer_subtlety,
+                "designer_actions": list(self._designer_actions),
+            }
         )

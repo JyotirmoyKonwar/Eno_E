@@ -216,3 +216,45 @@ class TestGeneral:
         assert hasattr(obs, "event_log")
         assert hasattr(obs, "cumulative_reward")
         assert hasattr(obs, "user_goal")
+
+    def test_flag_uses_oracle_and_rewards_true_positive(self):
+        env = DarkGuardEnv()
+        env.reset(task_id="easy_safe_signup")
+        env.step(DarkGuardAction(action_type="click", element_id="plan_free_trial"))
+        obs = env.step(DarkGuardAction(
+            action_type="flag",
+            element_id="auto_renew_checkbox",
+            note="preselected paid renewal trap",
+        ))
+        assert obs.step_reward > 0.0
+        state = env.state
+        assert state.flags_submitted[-1]["oracle_is_trap"] is True
+
+    def test_submit_without_inspection_gets_penalized(self):
+        env = DarkGuardEnv()
+        env.reset(task_id="easy_safe_signup")
+        env.step(DarkGuardAction(action_type="click", element_id="plan_free_trial"))
+        obs = env.step(DarkGuardAction(action_type="submit", element_id="submit_btn"))
+        assert obs.done is True
+        assert obs.step_reward < 0.0
+
+    def test_self_play_metadata_present_when_enabled(self):
+        env = DarkGuardEnv()
+        obs = env.reset(task_id="easy_safe_signup", self_play=True, subtlety=3, seed=42)
+        sp = obs.metadata.get("self_play", {})
+        assert sp.get("enabled") is True
+        assert sp.get("designer_subtlety") == 3
+        assert isinstance(sp.get("designer_actions"), list)
+
+    def test_friction_gate_can_be_inserted(self):
+        env = DarkGuardEnv()
+        env.reset(
+            task_id="medium_fair_checkout",
+            self_play=True,
+            designer_actions=[{"action": "add_friction_screen", "edge": "cart_to_seat_selection"}],
+        )
+        env.step(DarkGuardAction(action_type="click", element_id="add_to_cart_btn"))
+        obs = env.step(DarkGuardAction(action_type="click", element_id="proceed_btn"))
+        assert obs.screen_id == "friction_gate"
+        obs = env.step(DarkGuardAction(action_type="click", element_id="friction_continue_btn"))
+        assert obs.screen_id == "seat_selection"

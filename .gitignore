@@ -214,3 +214,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Experiment artifacts
+wandb/
+runs/
+runs_smoke/
+artifacts/
