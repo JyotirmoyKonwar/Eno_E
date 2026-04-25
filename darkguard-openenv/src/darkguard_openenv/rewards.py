@@ -46,9 +46,9 @@ class RewardAccumulator:
         if ctx.terminal_harmful:
             rb.harmful_path -= 1.2
         if ctx.terminal_safe:
-            rb.safe_completion += 1.5
+            rb.safe_completion += 2.0
 
-        rb.efficiency -= 0.005
+        rb.efficiency -= 0.002
         if ctx.step_count > int(ctx.max_steps * 0.7):
             rb.efficiency -= 0.02
 

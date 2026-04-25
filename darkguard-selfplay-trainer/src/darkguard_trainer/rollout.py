@@ -124,7 +124,7 @@ def evaluate_designer_episode(
     leakage = "trap" in json.dumps(designer_cfg).lower() and "visible" in json.dumps(designer_cfg).lower()
     reset_payload = {"task_id": "custom_episode", "episode_config": designer_cfg} if designer_cfg else {"task_id": "custom_episode"}
     rollout = run_consumer_episode(env, consumer, reset_payload, max_steps=20)
-    challenge_delta = max(-1.0, min(1.0, -rollout.total_reward / 4.0))
+    challenge_delta = 1.0 if not rollout.safe_completion else -0.5
     reward = compute_designer_reward(valid, challenge_delta, novelty, leakage, impossible)
     return reward, {"rollout": rollout.trace, "challenge_delta": challenge_delta}
 

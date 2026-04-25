@@ -127,7 +127,8 @@ class TrainerEngine:
             invalid.append(result.invalid_action_rate)
             fp.append(result.false_positive_rate)
             self.archive.add(result.trace)
-            self.consumer.improve(0.01)
+            improve_step = 0.05 if round_idx == 1 else 0.01
+            self.consumer.improve(improve_step)
         return {
             "mean_reward": mean(rewards) if rewards else 0.0,
             "safe_rate": mean(safe) if safe else 0.0,
