@@ -10,8 +10,10 @@
 # - Standalone environments (with openenv from PyPI/Git)
 # The build script (openenv build) handles context detection and sets appropriate build args.
 
-ARG BASE_IMAGE=ghcr.io/meta-pytorch/openenv-base:latest
-FROM ${BASE_IMAGE} AS builder
+# NOTE:
+# Some builders used by hosted platforms can fail ARG substitution in FROM.
+# Use an explicit base image to keep Space builds deterministic.
+FROM ghcr.io/meta-pytorch/openenv-base:latest AS builder
 
 WORKDIR /app
 
@@ -55,7 +57,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     fi
 
 # Final runtime stage
-FROM ${BASE_IMAGE}
+FROM ghcr.io/meta-pytorch/openenv-base:latest
 
 WORKDIR /app
 

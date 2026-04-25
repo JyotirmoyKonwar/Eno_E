@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+# Unsloth should be imported before TRL/Transformers for full patching.
+import unsloth  # noqa: F401
 from datasets import load_dataset
 from dotenv import load_dotenv
 from huggingface_hub import login
@@ -14,8 +16,8 @@ from unsloth import FastLanguageModel, is_bfloat16_supported
 
 DEFAULT_MODEL = "unsloth/Qwen3-4B-Thinking-2507-FP8"
 FALLBACK_MODELS = [
-    "unsloth/Qwen2.5-4B-Instruct-bnb-4bit",
-    "unsloth/Qwen2.5-3B-Instruct-bnb-4bit",
+    "Qwen/Qwen2.5-3B-Instruct",
+    "Qwen/Qwen2.5-7B-Instruct",
 ]
 
 
