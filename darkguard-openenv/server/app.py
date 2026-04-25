@@ -44,9 +44,6 @@ class DarkGuardOpenEnvAdapter(Environment[DarkGuardOpenEnvAction, DarkGuardOpenE
     ) -> DarkGuardOpenEnvObservation:
         _ = timeout_s, kwargs
         action_payload = action.model_dump(exclude_none=True)
-        # OpenEnv base Action can carry auxiliary metadata fields that are
-        # unknown to DarkGuard's strict action validator.
-        action_payload.pop("metadata", None)
         with self._shared_lock:
             try:
                 obs = self._env.step(action_payload)
