@@ -33,13 +33,10 @@ def compute_consumer_reward(obs: dict[str, Any], action: dict[str, Any]) -> Rewa
     rb = obs.get("reward_breakdown", {})
     env_reward = float(obs.get("reward", 0.0))
     safe_bonus = 0.1 if "safe" in str(obs.get("last_action_result", "")).lower() else 0.0
-    # Env reward already includes these components. Keep as explicit fields
-    # for debugging visibility but zero them to avoid double-counting.
-    _ = rb
-    fp_penalty = 0.0
-    invalid_penalty = 0.0
-    loop_penalty = 0.0
-    efficiency = 0.0
+    fp_penalty = float(rb.get("false_positive", 0.0))
+    invalid_penalty = float(rb.get("invalid_action", 0.0))
+    loop_penalty = float(rb.get("loop_penalty", 0.0))
+    efficiency = min(0.0, float(rb.get("efficiency", 0.0)))
     parse_bonus = 0.03 if action.get("action_type") else -0.03
     return RewardPack(env_reward, safe_bonus, fp_penalty, invalid_penalty, loop_penalty, efficiency, parse_bonus)
 

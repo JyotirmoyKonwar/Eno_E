@@ -43,8 +43,7 @@ class DarkGuardOpenEnvAdapter(Environment[DarkGuardOpenEnvAction, DarkGuardOpenE
         **kwargs: object,
     ) -> DarkGuardOpenEnvObservation:
         _ = timeout_s, kwargs
-        # Remove OpenEnv base Action metadata before validating against core env schema.
-        action_payload = action.model_dump(exclude_none=True, exclude={"metadata"})
+        action_payload = action.model_dump(exclude_none=True)
         with self._shared_lock:
             try:
                 obs = self._env.step(action_payload)

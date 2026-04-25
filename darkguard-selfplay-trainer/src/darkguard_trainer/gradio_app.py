@@ -9,8 +9,7 @@ from typing import Any
 import gradio as gr
 import pandas as pd
 
-from .config import AppConfig, SelfPlayCurriculumConfig
-from .curriculum import curriculum_live_summary, validate_curriculum_ranges
+from .config import AppConfig
 from .training import TrainerEngine, test_connection
 from .ui_state import StateHub
 
@@ -36,66 +35,7 @@ def _to_float(value: Any, default: float) -> float:
         return default
 
 
-def _parse_csv_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    s = str(value).strip()
-    if not s:
-        return []
-    return [p.strip() for p in s.split(",") if p.strip()]
-
-
-def _curriculum_from_values(values: tuple[Any, ...]) -> SelfPlayCurriculumConfig:
-    (
-        enable_curriculum,
-        freeze_from,
-        freeze_to,
-        alt_from,
-        alt_to,
-        alt_every_n,
-        full_from,
-        req_safe_gate,
-        safe_thr,
-        req_eval_gate,
-        eval_gt_baseline,
-        gate_combiner,
-        gate_source,
-        rolling_k,
-        use_fixed_pool,
-        fixed_ckpts,
-        fallback_baseline,
-        bootstrap_easy,
-        bootstrap_tasks,
-    ) = values
-    return SelfPlayCurriculumConfig(
-        enable_curriculum=bool(enable_curriculum),
-        freeze_designer_from_round=_to_int(freeze_from, 1),
-        freeze_designer_to_round=_to_int(freeze_to, 8),
-        alternate_designer_from_round=_to_int(alt_from, 9),
-        alternate_designer_to_round=_to_int(alt_to, 12),
-        designer_train_every_n_designer_phases=_to_int(alt_every_n, 2),
-        full_designer_training_from_round=_to_int(full_from, 13),
-        require_safe_rate_gate=bool(req_safe_gate),
-        safe_rate_threshold=_to_float(safe_thr, 0.10),
-        require_eval_reward_gate=bool(req_eval_gate),
-        eval_reward_must_exceed_baseline=bool(eval_gt_baseline),
-        gate_combiner=str(gate_combiner).upper() if gate_combiner else "OR",
-        gate_metric_source=str(gate_source),
-        gate_rolling_eval_k=_to_int(rolling_k, 3),
-        use_fixed_designer_pool=bool(use_fixed_pool),
-        fixed_designer_checkpoints=_parse_csv_list(fixed_ckpts),
-        fallback_to_baseline_designer=bool(fallback_baseline),
-        bootstrap_easy_tasks_only=bool(bootstrap_easy),
-        bootstrap_task_allowlist=_parse_csv_list(bootstrap_tasks) or ["easy_safe_signup"],
-    )
-
-
-NUM_BASE_TRAINING_INPUTS = 27
-
-
 def _build_config(*values: Any) -> AppConfig:
-    base_inputs = values[:NUM_BASE_TRAINING_INPUTS]
-    curriculum_inputs = values[NUM_BASE_TRAINING_INPUTS:]
     cfg = AppConfig()
     (
         env_url,
@@ -122,10 +62,9 @@ def _build_config(*values: Any) -> AppConfig:
         freeze_designer,
         replay_size,
         rollback_threshold,
-        use_local_router,
         use_baseline,
         use_wandb,
-    ) = base_inputs
+    ) = values
     cfg.connection.env_base_url = str(env_url).strip()
     hf_input = str(hf_token).strip()
     wandb_input = str(wandb_token).strip()
@@ -139,7 +78,6 @@ def _build_config(*values: Any) -> AppConfig:
     cfg.models.designer_base_model = str(designer_base).strip()
     cfg.models.consumer_checkpoint_override = str(consumer_ckpt).strip()
     cfg.models.designer_checkpoint_override = str(designer_ckpt).strip()
-    curriculum = _curriculum_from_values(curriculum_inputs)
     cfg.training = replace(
         cfg.training,
         total_rounds=_to_int(total_rounds, cfg.training.total_rounds),
@@ -157,10 +95,8 @@ def _build_config(*values: Any) -> AppConfig:
         freeze_designer=bool(freeze_designer),
         replay_buffer_size=_to_int(replay_size, cfg.training.replay_buffer_size),
         rollback_threshold=_to_float(rollback_threshold, cfg.training.rollback_threshold),
-        use_local_action_router=bool(use_local_router),
         use_baseline=bool(use_baseline),
         use_wandb=bool(use_wandb) or bool(cfg.connection.wandb_token),
-        curriculum=curriculum,
     )
     return cfg
 
@@ -179,6 +115,8 @@ def on_test_connection(env_url: str, hf_token: str, wandb_token: str) -> str:
 def on_start_training(*values: Any) -> str:
     global TRAIN_THREAD
     snap = STATE_HUB.snapshot()
+    # Recover from stale state where previous thread crashed/exited
+    # but `running=True` persisted.
     if snap.running and TRAIN_THREAD is not None and not TRAIN_THREAD.is_alive():
         STATE_HUB.update(running=False, stop_requested=False, active_phase="idle")
         STATE_HUB.append_log("[RECOVERY] Cleared stale running state from finished worker.")
@@ -187,9 +125,6 @@ def on_start_training(*values: Any) -> str:
     if snap.running:
         return "Training already running."
     cfg = _build_config(*values)
-    errs = validate_curriculum_ranges(cfg.training.curriculum)
-    if errs:
-        return "Cannot start: " + "; ".join(errs)
     STATE_HUB.update(running=True, stop_requested=False, logs=[], metrics=[], artifacts={}, current_round=0, active_phase="boot")
     engine = TrainerEngine(cfg, STATE_HUB)
     TRAIN_THREAD = threading.Thread(target=engine.run, daemon=True)
@@ -219,10 +154,8 @@ def on_save_snapshot() -> str:
 
 def on_eval_tournament(*values: Any) -> str:
     cfg = _build_config(*values)
-    errs = validate_curriculum_ranges(cfg.training.curriculum)
-    if errs:
-        return "Invalid curriculum: " + "; ".join(errs)
     engine = TrainerEngine(cfg, STATE_HUB)
+    # lightweight one-off eval via holdout phase path
     engine.log("Manual evaluation started.")
     return "Manual tournament trigger accepted. Start full training for periodic tournaments."
 
@@ -243,13 +176,8 @@ def _render_metrics() -> tuple[str, str, pd.DataFrame, pd.DataFrame, pd.DataFram
     return status, logs, metrics_df, metrics_df, metrics_df, artifacts
 
 
-def _live_curriculum_summary(*cv: Any) -> str:
-    c = _curriculum_from_values(cv)
-    return curriculum_live_summary(c)
-
-
 def build_app() -> gr.Blocks:
-    with gr.Blocks(title="DarkGuard Self-Play Trainer") as demo:
+    with gr.Blocks(title="DarkGuard Self-Play Trainer", theme=gr.themes.Soft()) as demo:
         gr.Markdown("## DarkGuard GRPO / Self-Play Trainer")
         with gr.Row():
             with gr.Column():
@@ -285,64 +213,10 @@ def build_app() -> gr.Blocks:
                 freeze_designer = gr.Checkbox(label="Freeze Designer", value=False)
                 replay_size = gr.Number(label="Replay Buffer Size", value=300, precision=0)
                 rollback_threshold = gr.Number(label="Rollback Threshold", value=0.2)
-                use_local_router = gr.Checkbox(label="Use Local LLM Action Router (heavy)", value=False)
                 use_baseline = gr.Checkbox(label="Use Eno_E Baseline", value=True)
                 use_wandb = gr.Checkbox(label="Use Weights & Biases", value=True)
 
-        with gr.Accordion("Self-Play Curriculum", open=False):
-            gr.Markdown(
-                "Bootstrap the Consumer with reduced Designer pressure, then alternate Designer updates, "
-                "then gated full self-play. Invalid ranges block training start."
-            )
-            cv_enable = gr.Checkbox(label="Enable curriculum", value=True)
-            with gr.Row():
-                freeze_from = gr.Slider(label="Freeze Designer from round", minimum=1, maximum=500, step=1, value=1)
-                freeze_to = gr.Slider(label="Freeze Designer to round", minimum=1, maximum=500, step=1, value=8)
-            with gr.Row():
-                alt_from = gr.Slider(label="Alternate train from round", minimum=1, maximum=500, step=1, value=9)
-                alt_to = gr.Slider(label="Alternate train to round", minimum=1, maximum=500, step=1, value=12)
-                alt_every_n = gr.Slider(
-                    label="Train Designer every N designer phases",
-                    minimum=1,
-                    maximum=10,
-                    step=1,
-                    value=2,
-                )
-            full_from = gr.Slider(label="Full Designer training from round", minimum=1, maximum=500, step=1, value=13)
-            gr.Markdown("**Unfreeze gates** (full training only at/after full-from when enabled gates pass; combiner default OR)")
-            with gr.Row():
-                req_safe_gate = gr.Checkbox(label="Require safe-rate gate", value=True)
-                safe_thr = gr.Slider(label="Safe-rate threshold", minimum=0.0, maximum=1.0, step=0.01, value=0.10)
-            with gr.Row():
-                req_eval_gate = gr.Checkbox(label="Require eval-reward gate", value=True)
-                eval_gt_baseline = gr.Checkbox(label="Eval reward must exceed baseline (strict >)", value=True)
-            with gr.Row():
-                gate_combiner = gr.Radio(label="Gate combiner", choices=["OR", "AND"], value="OR")
-                gate_source = gr.Dropdown(
-                    label="Gate metric source",
-                    choices=["latest_training", "latest_eval", "rolling_eval_k"],
-                    value="latest_eval",
-                )
-                rolling_k = gr.Slider(label="Rolling eval window K", minimum=1, maximum=20, step=1, value=3)
-            gr.Markdown("**Weak opponent pool**")
-            with gr.Row():
-                use_fixed_pool = gr.Checkbox(label="Use fixed weak Designer pool (name/id substring match)", value=False)
-                fallback_baseline = gr.Checkbox(label="Fallback to baseline designer when pool empty", value=True)
-            fixed_ckpts = gr.Textbox(
-                label="Fixed designer checkpoints (comma-separated names or path substrings)",
-                placeholder="designer_r2, designer_r4",
-                value="",
-            )
-            gr.Markdown("**Easiest-task bootstrap**")
-            with gr.Row():
-                bootstrap_easy = gr.Checkbox(label="Bootstrap easy tasks only (during freeze / alternate / pre-gate)", value=True)
-            bootstrap_tasks = gr.Textbox(
-                label="Bootstrap task allowlist (comma-separated task_ids)",
-                value="easy_safe_signup",
-            )
-            curriculum_summary = gr.Textbox(label="Live curriculum summary", lines=5, interactive=False)
-
-        base_inputs = [
+        inputs = [
             env_url,
             hf_token,
             wandb_token,
@@ -367,32 +241,9 @@ def build_app() -> gr.Blocks:
             freeze_designer,
             replay_size,
             rollback_threshold,
-            use_local_router,
             use_baseline,
             use_wandb,
         ]
-        curriculum_inputs = [
-            cv_enable,
-            freeze_from,
-            freeze_to,
-            alt_from,
-            alt_to,
-            alt_every_n,
-            full_from,
-            req_safe_gate,
-            safe_thr,
-            req_eval_gate,
-            eval_gt_baseline,
-            gate_combiner,
-            gate_source,
-            rolling_k,
-            use_fixed_pool,
-            fixed_ckpts,
-            fallback_baseline,
-            bootstrap_easy,
-            bootstrap_tasks,
-        ]
-        inputs = base_inputs + curriculum_inputs
 
         with gr.Row():
             start_btn = gr.Button("Start Training", variant="primary")
@@ -414,10 +265,6 @@ def build_app() -> gr.Blocks:
         resume_btn.click(on_resume_training, inputs=inputs, outputs=connection_status)
         snapshot_btn.click(on_save_snapshot, outputs=connection_status)
         eval_btn.click(on_eval_tournament, inputs=inputs, outputs=connection_status)
-
-        for comp in curriculum_inputs:
-            comp.change(_live_curriculum_summary, inputs=curriculum_inputs, outputs=curriculum_summary)
-        demo.load(_live_curriculum_summary, inputs=curriculum_inputs, outputs=curriculum_summary)
 
         timer = gr.Timer(1.5)
         timer.tick(

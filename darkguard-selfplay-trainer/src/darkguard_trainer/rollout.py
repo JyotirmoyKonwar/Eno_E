@@ -124,12 +124,7 @@ def evaluate_designer_episode(
     leakage = "trap" in json.dumps(designer_cfg).lower() and "visible" in json.dumps(designer_cfg).lower()
     reset_payload = {"task_id": "custom_episode", "episode_config": designer_cfg} if designer_cfg else {"task_id": "custom_episode"}
     rollout = run_consumer_episode(env, consumer, reset_payload, max_steps=20)
-    # Encourage "challenging but solvable": reward some challenge when consumer
-    # underperforms, but penalize fully broken/unsolved trajectories.
-    raw_challenge = max(-1.0, min(1.0, -rollout.total_reward / 5.0))
-    solvability_term = 0.25 if rollout.episode_done else -0.35
-    safe_term = -0.15 if rollout.safe_completion else 0.1
-    challenge_delta = max(-1.0, min(1.0, raw_challenge + solvability_term + safe_term))
+    challenge_delta = max(-1.0, min(1.0, -rollout.total_reward / 4.0))
     reward = compute_designer_reward(valid, challenge_delta, novelty, leakage, impossible)
     return reward, {"rollout": rollout.trace, "challenge_delta": challenge_delta}
 
