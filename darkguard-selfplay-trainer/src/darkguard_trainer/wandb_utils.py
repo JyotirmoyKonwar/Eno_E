@@ -35,7 +35,6 @@ def init_wandb(token: str | None, enabled: bool, project: str, config: dict[str,
             project=project,
             config=config,
             tags=["darkguard", "selfplay", "grpo-demo"],
-            settings=wandb.Settings(start_method="thread"),
         )
         session = WandbSession(enabled=True, run_url=run.url if run else "", _run=run)
         return session, "W&B connected."
