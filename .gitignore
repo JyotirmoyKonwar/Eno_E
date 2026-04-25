@@ -220,3 +220,6 @@ wandb/
 runs/
 runs_smoke/
 artifacts/
+
+# Local venv for HF Space uploads (scripts/hf_push_spaces.py)
+.hf_upload_venv/
