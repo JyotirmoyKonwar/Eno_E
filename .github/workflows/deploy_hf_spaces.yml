@@ -33,10 +33,11 @@ jobs:
       - name: Upload darkguard-openenv → Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python scripts/deploy_hf_space_folder.py
-          --repo-id Jyo-K/darkguard-openenv
-          --folder darkguard-openenv
-          --message "Deploy darkguard-openenv from ${{ github.sha }}"
+        run: |
+          python scripts/deploy_hf_space_folder.py \
+            --repo-id Jyo-K/darkguard-openenv \
+            --folder darkguard-openenv \
+            --message "Deploy darkguard-openenv from ${{ github.sha }}"
 
   deploy-selfplay-trainer:
     runs-on: ubuntu-latest
@@ -53,7 +54,8 @@ jobs:
       - name: Upload darkguard-selfplay-trainer → Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python scripts/deploy_hf_space_folder.py
-          --repo-id Jyo-K/darkguard-selfplay-trainer
-          --folder darkguard-selfplay-trainer
-          --message "Deploy selfplay trainer from ${{ github.sha }}"
+        run: |
+          python scripts/deploy_hf_space_folder.py \
+            --repo-id Jyo-K/darkguard-selfplay-trainer \
+            --folder darkguard-selfplay-trainer \
+            --message "Deploy selfplay trainer from ${{ github.sha }}"
