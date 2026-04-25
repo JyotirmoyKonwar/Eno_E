@@ -1,0 +1,10 @@
+unsloth
+trl
+transformers
+datasets
+accelerate
+peft
+bitsandbytes
+huggingface_hub
+python-dotenv
+wandb
