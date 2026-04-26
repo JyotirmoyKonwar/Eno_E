@@ -30,15 +30,24 @@ class RewardPack:
 
 
 def compute_consumer_reward(obs: dict[str, Any], action: dict[str, Any]) -> RewardPack:
-    rb = obs.get("reward_breakdown", {})
+    # The env_reward already includes breakdown components (fp, invalid, loop, efficiency).
+    # To avoid double-counting, we extract the base env_reward and only add our aux parse_bonus.
     env_reward = float(obs.get("reward", 0.0))
-    safe_bonus = 0.1 if "safe" in str(obs.get("last_action_result", "")).lower() else 0.0
-    fp_penalty = float(rb.get("false_positive", 0.0))
-    invalid_penalty = float(rb.get("invalid_action", 0.0))
-    loop_penalty = float(rb.get("loop_penalty", 0.0))
-    efficiency = min(0.0, float(rb.get("efficiency", 0.0)))
-    parse_bonus = 0.03 if action.get("action_type") else -0.03
-    return RewardPack(env_reward, safe_bonus, fp_penalty, invalid_penalty, loop_penalty, efficiency, parse_bonus)
+    rb = obs.get("reward_breakdown", {})
+    
+    # We keep the pack for logging/visibility but set internal components to 0 
+    # if they are already baked into env_reward.
+    parse_bonus = 0.03 if action.get("action_type") else -0.05
+    
+    return RewardPack(
+        env_reward=env_reward,
+        safe_bonus=0.0,
+        fp_penalty=0.0,
+        invalid_penalty=0.0,
+        loop_penalty=0.0,
+        efficiency=0.0,
+        parse_bonus=parse_bonus
+    )
 
 
 def compute_designer_reward(

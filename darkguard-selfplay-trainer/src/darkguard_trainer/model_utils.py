@@ -46,62 +46,65 @@ class PolicyModel:
         allowed = observation.get("allowed_actions", [])
         last_result = str(observation.get("last_action_result", "")).lower()
         inspected = self._seen_inspects(observation)
-        by_id = {str(e.get("id", "")): e for e in elements if isinstance(e, dict)}
-
-        # Escape repeated dead-ends instead of re-clicking the same bad path.
-        if "go_back" in allowed and ("invalid" in last_result or "no visible transition" in last_result):
-            return {"action_type": "go_back"}
-
-        # Prefer concrete progression actions first to avoid inspect loops.
+        
+        # 1. FLAG if we see a clear risk (High priority)
         if "flag" in allowed:
             for e in elements:
                 target = str(e.get("id", ""))
                 text = str(e.get("text", "")).lower()
                 if target and any(h in text for h in RISK_HINTS):
                     self._record_policy_choice("flag")
-                    return {"action_type": "flag", "target_id": target, "flag_category": "dark-pattern", "notes": f"{self.role}-auto-flag"}
+                    return {"action_type": "flag", "target_id": target, "flag_category": "dark-pattern"}
 
-        if "click" in allowed and elements:
-            # Score clickable candidates: prefer safe-looking labels and avoid risky ones.
+        # 2. CLICK/TOGGLE (Primary progression)
+        if "click" in allowed or "toggle" in allowed:
             best_id = None
             best_score = float("-inf")
             for e in elements:
                 target = str(e.get("id", ""))
                 text = str(e.get("text", "")).lower()
                 kind = str(e.get("type", "")).lower()
-                if not target:
+                if not target or kind not in {"button", "link", "checkbox", "toggle"}:
                     continue
-                if kind not in {"button", "link", "checkbox", "toggle"}:
-                    continue
+                
                 score = 0.0
-                if any(h in text for h in SAFE_HINTS):
-                    score += 2.0
-                if any(h in text for h in RISK_HINTS):
-                    score -= 2.0
-                if e.get("checked") is True:
-                    score -= 0.3
+                if any(h in text for h in SAFE_HINTS): score += 2.0
+                if any(h in text for h in RISK_HINTS): score -= 1.0
+                if e.get("checked") is True: score -= 0.5
                 score += 0.2 * self.skill_bias
+                
                 if score > best_score:
                     best_score = score
                     best_id = target
-            target = best_id or str(elements[0].get("id", "")) or str(next(iter(by_id), ""))
-            self._record_policy_choice("click")
-            return {"action_type": "click", "target_id": target}
+            
+            if best_id:
+                atype = "click" if "click" in allowed else "toggle"
+                self._record_policy_choice(atype)
+                return {"action_type": atype, "target_id": best_id}
 
-        if "inspect" in allowed and elements:
+        # 3. INSPECT (Only once per target per episode)
+        if "inspect" in allowed:
             for e in elements:
-                target = str(e.get("id", ""))
-                if target and target not in inspected:
-                    inspected.add(target)
+                tid = str(e.get("id", ""))
+                if tid and tid not in inspected:
+                    inspected.add(tid)
                     self._record_policy_choice("inspect")
-                    return {"action_type": "inspect", "target_id": target, "notes": f"{self.role}-inspect-once"}
+                    return {"action_type": "inspect", "target_id": tid}
 
-        if "go_back" in allowed and ("invalid" in last_result or "no visible transition" in last_result):
-            self._record_policy_choice("go_back")
-            return {"action_type": "go_back"}
+        # 4. GO_BACK (Recovery)
+        if "go_back" in allowed:
+            if "invalid" in last_result or "no visible transition" in last_result or not elements:
+                self._record_policy_choice("go_back")
+                return {"action_type": "go_back"}
 
-        self._record_policy_choice("submit")
-        return {"action_type": "submit"}
+        # 5. SUBMIT (Terminal)
+        if "submit" in allowed:
+            self._record_policy_choice("submit")
+            return {"action_type": "submit"}
+
+        # Fallback to first allowed
+        fallback = allowed[0] if allowed else "submit"
+        return {"action_type": fallback}
 
     def improve(self, delta: float) -> None:
         self.skill_bias = max(-2.0, min(2.0, self.skill_bias + delta))
