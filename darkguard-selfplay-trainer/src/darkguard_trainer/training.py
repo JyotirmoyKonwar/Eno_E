@@ -40,6 +40,22 @@ def _write_metrics_csv(path: Path, metrics: list[dict[str, Any]]) -> None:
             writer.writerow(row)
 
 
+def _load_skill_bias(checkpoint_path: str) -> float | None:
+    if not checkpoint_path:
+        return None
+    path = Path(checkpoint_path)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    try:
+        return float(payload.get("skill_bias"))
+    except Exception:
+        return None
+
+
 class TrainerEngine:
     def __init__(self, cfg: AppConfig, state_hub: StateHub):
         self.cfg = cfg
@@ -69,6 +85,7 @@ class TrainerEngine:
             project="darkguard-selfplay-trainer",
             config=cfg.as_dict(),
         )
+        self.baseline_elo_k = self.cfg.training.elo_k_factor * 0.75
 
     def log(self, msg: str) -> None:
         ts = datetime.now(UTC).strftime("%H:%M:%S")
@@ -142,16 +159,32 @@ class TrainerEngine:
         rewards: list[float] = []
         validity: list[float] = []
         challenge: list[float] = []
+        historical_matches = 0
+        historical_avg_elo = 0.0
+        historical_elo_samples: list[float] = []
         for _ in range(self.cfg.training.designer_steps_per_round):
             if self._stop_requested():
                 self.log("Stop requested during designer phase.")
                 break
             opponent = sample_opponent(self.elo.designer, self.league.consumer_pool, self.rng)
+            eval_consumer = self.consumer
             if opponent:
                 self.log(f"Designer sampled consumer opponent: {opponent.name} ({opponent.elo:.1f})")
+                loaded_bias = _load_skill_bias(opponent.checkpoint)
+                if loaded_bias is not None:
+                    # Evaluate against a frozen historical consumer snapshot when available.
+                    eval_consumer = load_policy(
+                        "consumer",
+                        self.consumer.base_model,
+                        self.consumer.adapter_repo,
+                        checkpoint_override=opponent.checkpoint,
+                    )
+                    eval_consumer.skill_bias = loaded_bias
+                    historical_matches += 1
+                    historical_elo_samples.append(opponent.elo)
             episode_cfg, _prompt = generate_designer_episode(self.designer, self.rng)
             novelty = self.rng.uniform(0.0, 0.3)
-            score, trace = evaluate_designer_episode(self.env, self.consumer, episode_cfg, novelty=novelty)
+            score, trace = evaluate_designer_episode(self.env, eval_consumer, episode_cfg, novelty=novelty)
             if "error" in trace.get("rollout", {}):
                 self.log(f"Designer eval warning: {trace['rollout']['error']}")
             rewards.append(score)
@@ -159,11 +192,15 @@ class TrainerEngine:
             challenge.append(float(trace.get("challenge_delta", 0.0)))
             self.designer.record_reward(score)
         ppo_loss = self.designer.ppo_update()
+        if historical_elo_samples:
+            historical_avg_elo = mean(historical_elo_samples)
         return {
             "designer_reward": mean(rewards) if rewards else 0.0,
             "designer_validity": mean(validity) if validity else 0.0,
             "designer_challenge": mean(challenge) if challenge else 0.0,
             "designer_ppo_loss": ppo_loss,
+            "designer_vs_history_matches": float(historical_matches),
+            "designer_vs_history_opp_elo": historical_avg_elo,
         }
 
     def _snapshot_phase(self, round_idx: int, metric: dict[str, float]) -> None:
@@ -245,12 +282,36 @@ class TrainerEngine:
                     self.log("Stop requested after phase completion.")
                     break
 
-                # ELO updates against opposite role using latest phase score.
-                phase_score = float(row.get("mean_reward", row.get("eval_reward", row.get("designer_reward", 0.0))))
-                normalized = max(0.0, min(1.0, 0.5 + phase_score / 8.0))
-                self.elo.consumer, self.elo.designer = update_elo(
-                    self.elo.consumer, self.elo.designer, normalized, self.cfg.training.elo_k_factor
-                )
+                # Non-zero-sum updates:
+                # 1) consumer and designer each move against a fixed baseline anchor
+                # 2) designer also moves against historical opponents when sampled
+                if "mean_reward" in row or "eval_reward" in row:
+                    consumer_score = float(row.get("mean_reward", row.get("eval_reward", 0.0)))
+                    consumer_norm = max(0.0, min(1.0, 0.5 + consumer_score / 8.0))
+                    self.elo.consumer, _ = update_elo(
+                        self.elo.consumer,
+                        self.elo.baseline,
+                        consumer_norm,
+                        self.baseline_elo_k,
+                    )
+
+                if "designer_reward" in row:
+                    designer_score = float(row["designer_reward"])
+                    designer_norm = max(0.0, min(1.0, 0.5 + designer_score / 2.0))
+                    self.elo.designer, _ = update_elo(
+                        self.elo.designer,
+                        self.elo.baseline,
+                        designer_norm,
+                        self.baseline_elo_k,
+                    )
+                    hist_opp = float(row.get("designer_vs_history_opp_elo", 0.0))
+                    if hist_opp > 0.0:
+                        self.elo.designer, _ = update_elo(
+                            self.elo.designer,
+                            hist_opp,
+                            designer_norm,
+                            self.cfg.training.elo_k_factor,
+                        )
                 row.update(
                     {
                         "consumer_elo": self.elo.consumer,
