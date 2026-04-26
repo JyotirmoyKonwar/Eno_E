@@ -241,7 +241,7 @@ class TrainerEngine:
 
                 # ELO updates against opposite role using latest phase score.
                 phase_score = float(row.get("mean_reward", row.get("eval_reward", row.get("designer_reward", 0.0))))
-                normalized = max(0.0, min(1.0, 0.5 + phase_score / 8.0))
+                normalized = 1.0 if phase_score > 0 else 0.0
                 self.elo.consumer, self.elo.designer = update_elo(
                     self.elo.consumer, self.elo.designer, normalized, self.cfg.training.elo_k_factor
                 )
