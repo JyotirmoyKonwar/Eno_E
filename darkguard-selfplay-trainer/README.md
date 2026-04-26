@@ -93,3 +93,4 @@ pytest -q
 - `src/darkguard_trainer/selfplay.py` — phase scheduling and opponent sampling
 - `src/darkguard_trainer/evaluation.py` — holdout tournament
 - `src/darkguard_trainer/checkpointing.py` — checkpoint + frozen pool metadata
+ 
