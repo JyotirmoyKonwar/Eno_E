@@ -19,7 +19,7 @@ class PolicyModel:
     checkpoint_path: str = ""
     skill_bias: float = 0.0
     action_logits: dict[str, float] = field(default_factory=lambda: {"click": 0.5, "flag": 0.3, "inspect": -0.1, "submit": 0.1, "go_back": -0.2})
-    policy_lr: float = 0.05
+    policy_lr: float = 0.02
     _episode_inspected: dict[str, set[str]] = field(default_factory=dict, repr=False)
     _traj_data: list[tuple[int, torch.Tensor]] = field(default_factory=list, repr=False)
     _traj_rewards: list[float] = field(default_factory=list, repr=False)

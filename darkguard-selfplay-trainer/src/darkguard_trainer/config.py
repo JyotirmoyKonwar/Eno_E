@@ -37,19 +37,19 @@ class ModelConfig:
 
 @dataclass(slots=True)
 class TrainingConfig:
-    total_rounds: int = 20
-    consumer_steps_per_round: int = 4
-    designer_steps_per_round: int = 2
+    total_rounds: int = 1000
+    consumer_steps_per_round: int = 8
+    designer_steps_per_round: int = 4
     num_generations: int = 2
     batch_size: int = 2
     max_prompt_length: int = 1024
     max_completion_length: int = 256
-    consumer_lr: float = 2e-5
+    consumer_lr: float = 1e-5
     designer_lr: float = 1e-5
-    elo_k_factor: float = 12.0
-    eval_interval: int = 2
-    replay_buffer_size: int = 50
-    rollback_threshold: float = 0.2
+    elo_k_factor: float = 16.0
+    eval_interval: int = 5
+    replay_buffer_size: int = 100
+    rollback_threshold: float = 0.3
     freeze_consumer: bool = False
     freeze_designer: bool = False
     use_baseline: bool = True
