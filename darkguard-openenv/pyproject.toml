@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "darkguard-openenv"
+name = "DarkVader-openenv"
 version = "0.1.0"
 description = "DarkGuard OpenEnv environment space"
 readme = "README.md"

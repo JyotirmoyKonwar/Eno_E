@@ -7,8 +7,8 @@ import threading
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.interfaces import Environment
 
-from darkguard_openenv.environment import DarkGuardEnvironment
-from darkguard_openenv.models import (
+from DarkVader_openenv.environment import DarkGuardEnvironment
+from DarkVader_openenv.models import (
     DarkGuardOpenEnvAction,
     DarkGuardOpenEnvObservation,
     DarkGuardOpenEnvState,
@@ -66,5 +66,5 @@ app = create_app(
     env=DarkGuardOpenEnvAdapter,
     action_cls=DarkGuardOpenEnvAction,
     observation_cls=DarkGuardOpenEnvObservation,
-    env_name="darkguard-openenv",
+    env_name="DarkVader-openenv",
 )

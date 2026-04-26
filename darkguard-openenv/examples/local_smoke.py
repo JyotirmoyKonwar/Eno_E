@@ -1,6 +1,6 @@
 """Local smoke script for direct environment usage."""
 
-from darkguard_openenv.environment import DarkGuardEnvironment
+from DarkVader_openenv.environment import DarkGuardEnvironment
 
 
 def main() -> None:

@@ -1,10 +1,10 @@
 """Remote smoke script for a deployed DarkGuard OpenEnv Space."""
 
-from darkguard_openenv.client import DarkGuardClient
+from DarkVader_openenv.client import DarkGuardClient
 
 
 def main() -> None:
-    # Replace with your Space URL, e.g. https://<user>-darkguard-openenv.hf.space
+    # Replace with your Space URL, e.g. https://<user>-DarkVader-openenv.hf.space
     base_url = "http://localhost:7860"
     client = DarkGuardClient(base_url=base_url)
 

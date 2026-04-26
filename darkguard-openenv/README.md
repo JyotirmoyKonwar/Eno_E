@@ -1,189 +1,248 @@
 ---
-title: darkguard-openenv
+title: DarkGuard OpenEnv
 emoji: 🛡️
-colorFrom: yellow
+colorFrom: indigo
 colorTo: red
 sdk: docker
 pinned: false
-tags:
-- openenv
-- reinforcement-learning
-- grpo
-- fastapi
 ---
 
-# darkguard-openenv
+# DarkGuard OpenEnv
 
-`darkguard-openenv` is a production-ready OpenEnv-style environment for training a consumer LLM to detect and avoid deceptive UX patterns (dark patterns) across signup, checkout, renewal, and cancellation flows.
+**An OpenEnv-native cybersecurity world where LLM agents learn to defend under uncertainty, pressure, and adversarial adaptation.**
 
-This repository intentionally contains **only the environment space**:
-- no GRPO trainer
-- no Gradio GUI
-- no model-serving UI
+## Overview
 
-## Why this environment exists
+DarkGuard OpenEnv is the core environment for our OpenEnv / RL-for-LLMs hackathon project, **DarkGuard**.  
+It is designed around a simple but important gap: modern LLMs can explain cybersecurity concepts, but they are still weak at **sequential, evidence-driven defensive decision-making** in noisy, partially observable settings.
 
-Dark-pattern safety should be trained against an objective verifier, not free-form heuristics.  
-This environment is the source of truth for transitions, hidden traps, and reward computation so external GRPO loops can stay simple and consistent.
+Instead of reinventing environment tooling, DarkGuard is built on **OpenEnv philosophy and interfaces**: composable tasks, clear observations/actions, reward-driven learning loops, and compatibility with RL training pipelines.  
+This Space provides the environment. The companion training pipeline lives in the trainer Space:
 
-## Environment Contract
+- Trainer Space: https://huggingface.co/spaces/Jyo-K/DarkVader-selfplay-trainer
 
-The environment follows the standard Gym/OpenEnv contract:
-- `reset(**kwargs) -> observation`
-- `step(action) -> observation`
-- `state() -> metadata`
+## The problem
 
-The FastAPI server exposes these as:
-- `POST /reset`
-- `POST /step`
-- `GET /state`
+Today’s frontier models can produce impressive cyber advice in one-shot prompts, but real defensive operations are not one-shot.  
+Defenders must:
 
-## Task Families
+- gather partial evidence over time,
+- avoid false positives and costly overreactions,
+- manage adversarial deception,
+- and commit to actions that have delayed consequences.
 
-Built-in deterministic task families:
-- `easy_safe_signup`
-- `medium_fair_checkout`
-- `hard_cancel_maze`
+This creates a capability gap between **talking about security** and **acting as a reliable defender over a long horizon**.  
+DarkGuard turns that gap into a trainable RL environment.
 
-Also supported:
-- `custom_episode`
+## Why DarkGuard
 
-For `custom_episode`, pass a strict `episode_config` payload to `reset()`. If absent, built-ins are sampled deterministically by seed.
+Cybersecurity is a strong RL testbed because it naturally combines:
 
-## Observation and Action Design
+- **partial observability** (you rarely see full attacker intent),
+- **adversarial pressure** (attackers adapt),
+- **high-stakes trade-offs** (missed threats vs operational friction),
+- **temporal strategy** (good decisions are sequences, not isolated outputs).
 
-### Action
-`DarkGuardAction` supports:
-- `action_type`: `inspect|click|toggle|flag|go_back|submit`
-- `target_id` (optional)
-- `flag_category` (optional)
-- `notes` (optional)
+DarkGuard focuses on dark-pattern and adversarial interaction defense as a practical proxy for broader cyber-defense behavior: detect manipulation, inspect signals, and choose safe, robust actions over time.
 
-### Observation
-`DarkGuardObservation` includes:
-- episode/task/screen identity
-- instruction and visible summary
-- visible elements (`id`, `type`, `text`, `checked`, `enabled`, `prominence`, `metadata`)
-- allowed actions
-- step and reward tracking
-- done status
-- event messages
-- reward breakdown (safe for debugging)
+![DarkGuard Environment Diagram](environment_structure.png)
 
-### State
-`state()` returns operational metadata:
-- episode progress
-- cumulative reward
-- outcome summary
-- cumulative reward components
+## Environment design
 
-It intentionally excludes hidden oracle labels.
+DarkGuard is framed as an interactive environment where an LLM agent repeatedly observes state and chooses defense actions.
 
-## Reward Design (Verifier-Based)
+### OpenEnv interaction contract
 
-Reward components:
-- progress reward (useful inspection/navigation)
-- correct flag reward
-- false-positive penalty
-- harmful terminal penalty
-- safe completion reward
-- per-step efficiency penalty
-- loop/repetition penalty
-- invalid action penalty
-- optional evidence bonus (flag/notes aligned with trap evidence)
+DarkGuard follows a Gym/OpenEnv-like contract:
 
-Per-step reward is clipped to a stable range for GRPO:
-- min `-2.0`
-- max `2.0`
+- `reset(task_id, seed, max_steps, difficulty, subtlety, episode_config)` initializes a new episode.
+- `step(action)` advances the environment by one action.
+- `state()` returns compact episode-level summary state.
 
-## Anti-Reward-Hacking Safeguards
+This Space supports both builtin tasks and `custom_episode` payloads so trainer-generated adversarial scenarios can be injected without changing environment code.
 
-Implemented safeguards:
-- hidden `trap_map` stays internal to server environment
-- public observation/state never return hidden trap labels
-- terminal verifier uses objective terminal screen ids
-- spam-flagging incurs false-positive costs
-- repeated state-action loops are penalized
-- malformed actions become safe invalid actions (no crash)
-- malformed custom episodes fail strict schema validation
-- hard `max_steps` cutoff with consistent done behavior
-- no submit shortcut from non-terminal states
+### Observation schema (what the agent sees)
 
-## Text Action Parsing
+Each step returns an observation with operational context and feedback fields:
 
-`step()` supports:
-1. strict JSON:
+- `episode_id`, `task_id`, `screen_id`
+- `instruction`, `visible_summary`
+- `elements` (UI/control objects, each with `id`, `type`, `text`, `checked`, `enabled`, `prominence`, `metadata`)
+- `allowed_actions` (action mask for current state)
+- `step_count`, `max_steps`
+- `reward` (step reward), `cumulative_reward`
+- `done`
+- `last_action_result`, `messages`
+- `reward_breakdown` (per-component reward terms for this step)
+
+This is intentionally structured for RL rollouts: policy input is explicit, and training diagnostics are visible without hidden side channels.
+
+### Action space (what the agent can do)
+
+Supported action types:
+
+- `inspect`
+- `click`
+- `toggle`
+- `flag`
+- `go_back`
+- `submit`
+
+Action payload format:
+
+- `action_type` (required)
+- `target_id` (required for target-dependent actions like `inspect`, `flag`, `click`, `toggle`)
+- `flag_category` (optional evidence label for `flag`)
+- `notes` (optional rationale text)
+
+The environment dynamically computes `allowed_actions` from current screen elements and context (for example, `submit` appears only on terminal screens). Invalid format or impossible actions are accepted as input but penalized and reflected in feedback.
+
+### Transition and termination logic
+
+- Screens are task-defined nodes with transitions keyed by target element IDs.
+- `click`/`toggle` can trigger transitions when mapped.
+- `go_back` is only valid when a back transition exists.
+- `submit` is valid only on terminal screens.
+- Episode terminates on:
+  - reaching a terminal safe/harmful screen, or
+  - hitting `max_steps`.
+
+The environment tracks repeated `(screen, action)` patterns to discourage loop exploitation and reward hacking.
+
+### Episode state (`state()`)
+
+The compact state endpoint exposes:
+
+- `task_id`, `screen_id`, `step_count`, `max_steps`
+- `cumulative_reward`
+- `done`, `outcome_summary`
+- recent `messages`
+- cumulative `reward_totals` by component
+
+This makes post-episode analysis and judge-facing verification straightforward.
+
+## Reward design
+
+DarkGuard uses a conceptually layered reward structure to encourage practical defender behavior:
+
+- **Progress incentives:** small positive reward for useful interaction (inspection and valid navigation actions).
+- **Detection quality:** positive reward for correct trap flags; penalty for false positives.
+- **Evidence quality:** bonus when flag category/notes align with actual trap evidence.
+- **Terminal outcomes:** strong positive for safe completion, strong negative for harmful completion.
+- **Behavior shaping:** efficiency cost per step, extra late-step penalty, repeated-loop penalty, invalid-action penalty.
+- **Safety bounds:** step reward is clipped to a stable range to avoid exploding updates during training.
+
+The goal is not “always block everything,” but to learn a policy that is both **secure and operationally sensible**.
+
+## Theme alignment
+
+DarkGuard is designed to map directly to core OpenEnv hackathon themes:
+
+**World Modeling**
+- The agent must infer latent risk from incomplete observations and evolving context.
+
+**Multi-Agent Interactions**
+- The setting includes adversarial pressure and self-play style evolution through historical opponent pools.
+
+**Self-Improvement**
+- The training pipeline supports iterative policy updates against dynamic and historical opponents.
+
+**Long-Horizon Planning**
+- Defensive quality emerges from action sequences, not single-turn outputs.
+
+## Results
+
+This Space focuses on environment delivery; training and progress tracking are handled in the trainer Space.
+
+Planned / attached artifacts:
+
+- [Add reward curve image here]
+- [Add loss curve image here]
+- [Add training GIF here]
+- [Add before-vs-after qualitative behavior examples here]
+- [Add architecture diagram here]
+
+Qualitative behaviors to highlight in evaluation:
+
+- **Before training:** reactive, brittle, overconfident or inconsistent defensive actions
+- **After training:** more deliberate inspection, better threat discrimination, safer completion patterns
+
+## Links and artifacts
+
+- OpenEnv Space (this project): https://huggingface.co/spaces/Jyo-K/DarkVader-openenv
+- Trainer Space (pipeline, self-play, checkpoints, metrics): https://huggingface.co/spaces/Jyo-K/DarkVader-selfplay-trainer
+- [Add project blog link here]
+- [Add demo video link here]
+- [Add slides link here]
+- [Add repository link here]
+
+This README is intended as the central story + environment entry point, with links to all supporting materials and the full training workflow in the trainer Space.
+
+## Running / using the Space
+
+### For judges and visitors
+1. Open the Space UI.
+2. Inspect available environment interactions/endpoints (`reset`, `step`, `state`).
+3. Run sample episodes and check `allowed_actions`, `last_action_result`, and `reward_breakdown`.
+4. Confirm that terminal outcomes map to `outcome_summary` and cumulative reward behavior.
+5. Compare with trainer outputs to understand learning progression.
+
+### For contributors
+1. Review environment components and OpenEnv interface wiring.
+2. Validate observation/action schema consistency.
+3. Test rollout behavior for valid, invalid, and adversarial action traces.
+4. Connect to the trainer Space for policy iteration and evaluation.
+
+### Minimal action example
+
 ```json
-{"action_type":"flag","target_id":"hidden_fee","flag_category":"hidden-costs"}
-```
-2. fallback text:
-```text
-ACTION: inspect | TARGET: cookie_banner
-ACTION: flag | TARGET: hidden_fee | CATEGORY: hidden-costs
-```
-
-Parse failures become safe invalid actions and receive a small penalty.
-
-## Run Locally
-
-```bash
-cd darkguard-openenv
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-export PYTHONPATH=$PWD/src
-uvicorn server.app:app --host 0.0.0.0 --port 7860 --reload
+{
+  "action_type": "flag",
+  "target_id": "signup_trap",
+  "flag_category": "dark-pattern",
+  "notes": "ambiguous consent flow"
+}
 ```
 
-## Run Tests
+### Minimal observation fields example
 
-```bash
-cd darkguard-openenv
-export PYTHONPATH=$PWD/src
-pytest -q
+```json
+{
+  "task_id": "custom_episode",
+  "screen_id": "start",
+  "allowed_actions": ["inspect", "click", "flag"],
+  "step_count": 3,
+  "max_steps": 25,
+  "reward_breakdown": {
+    "correct_flag": 0.4,
+    "false_positive": 0.0,
+    "total": 0.465
+  },
+  "done": false
+}
 ```
 
-## Smoke Examples
+### Notes
+- This Space is the **environment layer**.
+- The trainer Space contains training loops, self-play management, checkpointing, and experiment tracking.
 
-```bash
-cd darkguard-openenv
-export PYTHONPATH=$PWD/src
-python examples/local_smoke.py
-python examples/remote_smoke.py
-```
+## Why this project matters
 
-## Hugging Face Space Deployment
+Most non-technical users assume AI cyber-defense is “solved” because models sound confident.  
+In reality, confidence is not competence. DarkGuard makes that distinction measurable.
 
-1. Create a Docker Space named `darkguard-openenv`.
-2. Push this repository contents.
-3. Space uses `Dockerfile` startup:
-   - `uvicorn server.app:app --host 0.0.0.0 --port 7860`
-4. Use base URL from Space for remote clients.
+By turning cyber-defense reasoning into an interactive RL environment, we move from:
+- static chatbot answers  
+to
+- testable, improvable defensive behavior over time.
 
-`openenv.yaml` metadata is included for environment discovery and documentation.
+That matters for safer AI systems, better defensive automation, and more realistic evaluation of model capability under real-world pressure.
 
-## Client-Server Separation
+## Future work
 
-Client code (`src/darkguard_openenv/client.py`) communicates strictly over HTTP with base URL.  
-No server internals are imported by remote consumers.
-
-## GRPO Integration Pattern (Trainer lives elsewhere)
-
-```python
-from darkguard_openenv.client import DarkGuardClient
-
-env = DarkGuardClient("https://<your-space>.hf.space")
-obs = env.reset(task_id="custom_episode", seed=123, max_steps=20)
-
-done = False
-while not done:
-    # your model generates action text or dict
-    action = {"action_type": "inspect", "target_id": "some_element"}
-    obs = env.step(action)
-    reward = obs["reward"]
-    done = obs["done"]
-    # trainer stores (obs, action, reward, next_obs)
-```
-
-This repository deliberately does not include trainer code.
- 
+- Expand scenario diversity to broader cyber workflows beyond current task families.
+- Increase realism of adversarial adaptation and deception patterns.
+- Add richer multi-agent curricula and tournament-style evaluation.
+- Improve interpretability tooling for trajectory-level failure analysis.
+- Add benchmark suites for cross-policy comparison and reproducibility.
+- Package standardized evaluation tracks for future OpenEnv community submissions.

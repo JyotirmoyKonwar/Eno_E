@@ -1,4 +1,4 @@
-from darkguard_openenv.environment import DarkGuardEnvironment
+from DarkVader_openenv.environment import DarkGuardEnvironment
 
 
 def test_reset_returns_valid_observation() -> None:
