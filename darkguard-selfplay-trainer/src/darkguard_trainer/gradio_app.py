@@ -197,21 +197,21 @@ def build_app() -> gr.Blocks:
         with gr.Accordion("Training Config", open=True):
             with gr.Row():
                 total_rounds = gr.Number(label="Total Rounds", value=20, precision=0)
-                consumer_steps = gr.Number(label="Consumer Steps / Round", value=4, precision=0)
-                designer_steps = gr.Number(label="Designer Steps / Round", value=2, precision=0)
-                num_generations = gr.Number(label="Num Generations", value=2, precision=0)
-                batch_size = gr.Number(label="Batch Size", value=2, precision=0)
+                consumer_steps = gr.Number(label="Consumer Steps / Round", value=20, precision=0)
+                designer_steps = gr.Number(label="Designer Steps / Round", value=10, precision=0)
+                num_generations = gr.Number(label="Num Generations", value=4, precision=0)
+                batch_size = gr.Number(label="Batch Size", value=4, precision=0)
             with gr.Row():
                 max_prompt = gr.Number(label="Max Prompt Length", value=1024, precision=0)
                 max_completion = gr.Number(label="Max Completion Length", value=256, precision=0)
                 consumer_lr = gr.Number(label="Consumer LR", value=2e-5)
                 designer_lr = gr.Number(label="Designer LR", value=1e-5)
-                elo_k = gr.Number(label="ELO K-Factor", value=12.0)
+                elo_k = gr.Number(label="ELO K-Factor", value=20.0)
                 eval_interval = gr.Number(label="Eval Interval", value=2, precision=0)
             with gr.Row():
                 freeze_consumer = gr.Checkbox(label="Freeze Consumer", value=False)
                 freeze_designer = gr.Checkbox(label="Freeze Designer", value=False)
-                replay_size = gr.Number(label="Replay Buffer Size", value=50, precision=0)
+                replay_size = gr.Number(label="Replay Buffer Size", value=300, precision=0)
                 rollback_threshold = gr.Number(label="Rollback Threshold", value=0.2)
                 use_baseline = gr.Checkbox(label="Use Eno_E Baseline", value=True)
                 use_wandb = gr.Checkbox(label="Use Weights & Biases", value=True)

@@ -5,12 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-CONSUMER_SYSTEM_PROMPT = (
-    "IMPORTANT: You MUST output valid JSON. "
-    "If you cannot find the target, use ACTION: go_back or ACTION: inspect with a valid ID. "
-    "Do NOT repeat failed actions."
-)
-
 
 @dataclass(slots=True)
 class PolicyModel:
@@ -36,7 +30,6 @@ class PolicyModel:
 
 
 def load_policy(role: str, base_model: str, adapter_repo: str, checkpoint_override: str = "") -> PolicyModel:
-    _ = CONSUMER_SYSTEM_PROMPT if role == "consumer" else ""
     return PolicyModel(
         role=role,
         base_model=base_model,

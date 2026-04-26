@@ -46,17 +46,17 @@ class RewardAccumulator:
         if ctx.terminal_harmful:
             rb.harmful_path -= 1.2
         if ctx.terminal_safe:
-            rb.safe_completion += 3.0
+            rb.safe_completion += 1.0
 
         rb.efficiency -= 0.015
         if ctx.step_count > int(ctx.max_steps * 0.7):
             rb.efficiency -= 0.02
 
         if ctx.repeated_state:
-            rb.loop_penalty -= 0.01
+            rb.loop_penalty -= 0.08
 
         if ctx.was_invalid:
-            rb.invalid_action -= 0.02
+            rb.invalid_action -= 0.12
 
         self._add_to_totals(rb)
         return rb
