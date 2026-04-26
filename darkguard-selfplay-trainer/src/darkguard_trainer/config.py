@@ -50,6 +50,7 @@ class TrainingConfig:
     eval_interval: int = 5
     replay_buffer_size: int = 100
     rollback_threshold: float = 0.3
+    historical_window: int = 8
     freeze_consumer: bool = False
     freeze_designer: bool = False
     use_baseline: bool = True

@@ -22,7 +22,7 @@ from .evaluation import run_holdout_eval
 from .hf_utils import ensure_hf_login
 from .model_utils import PolicyModel, load_policy
 from .rollout import evaluate_designer_episode, generate_designer_episode, run_consumer_episode
-from .selfplay import LeaguePools, OpponentEntry, phase_for_round, sample_opponent
+from .selfplay import LeaguePools, OpponentEntry, phase_for_round, recent_opponents, sample_opponent
 from .state_store import load_state, save_state
 from .ui_state import StateHub
 from .wandb_utils import init_wandb
@@ -128,14 +128,32 @@ class TrainerEngine:
         safe: list[float] = []
         invalid: list[float] = []
         fp: list[float] = []
+        historical_matches = 0
+        historical_avg_elo = 0.0
+        historical_elo_samples: list[float] = []
         for _ in range(self.cfg.training.consumer_steps_per_round):
             if self._stop_requested():
                 self.log("Stop requested during consumer phase.")
                 break
-            opponent = sample_opponent(self.elo.consumer, self.league.designer_pool, self.rng)
+            opponent_pool = recent_opponents(self.league.designer_pool, self.cfg.training.historical_window)
+            opponent = sample_opponent(self.elo.consumer, opponent_pool, self.rng)
+            reset_payload = {"task_id": "custom_episode", "seed": self.rng.randint(1, 999999)}
             if opponent:
                 self.log(f"Consumer sampled designer opponent: {opponent.name} ({opponent.elo:.1f})")
-            reset_payload = {"task_id": "custom_episode", "seed": self.rng.randint(1, 999999)}
+                loaded_bias = _load_skill_bias(opponent.checkpoint)
+                if loaded_bias is not None:
+                    frozen_designer = load_policy(
+                        "designer",
+                        self.designer.base_model,
+                        self.designer.adapter_repo,
+                        checkpoint_override=opponent.checkpoint,
+                    )
+                    frozen_designer.skill_bias = loaded_bias
+                    episode_cfg, _prompt = generate_designer_episode(frozen_designer, self.rng)
+                    if episode_cfg:
+                        reset_payload = {"task_id": "custom_episode", "episode_config": episode_cfg}
+                        historical_matches += 1
+                        historical_elo_samples.append(opponent.elo)
             result = run_consumer_episode(self.env, self.consumer, reset_payload, max_steps=24)
             if "error" in result.trace:
                 self.log(f"Consumer rollout warning: {result.trace['error']}")
@@ -146,12 +164,16 @@ class TrainerEngine:
             self.archive.add(result.trace)
             self.consumer.record_reward(result.total_reward)
         ppo_loss = self.consumer.ppo_update()
+        if historical_elo_samples:
+            historical_avg_elo = mean(historical_elo_samples)
         return {
             "mean_reward": mean(rewards) if rewards else 0.0,
             "safe_rate": mean(safe) if safe else 0.0,
             "invalid_rate": mean(invalid) if invalid else 0.0,
             "fp_rate": mean(fp) if fp else 0.0,
             "consumer_ppo_loss": ppo_loss,
+            "consumer_vs_history_matches": float(historical_matches),
+            "consumer_vs_history_opp_elo": historical_avg_elo,
         }
 
     def _train_designer_phase(self, round_idx: int) -> dict[str, float]:
@@ -166,7 +188,8 @@ class TrainerEngine:
             if self._stop_requested():
                 self.log("Stop requested during designer phase.")
                 break
-            opponent = sample_opponent(self.elo.designer, self.league.consumer_pool, self.rng)
+            opponent_pool = recent_opponents(self.league.consumer_pool, self.cfg.training.historical_window)
+            opponent = sample_opponent(self.elo.designer, opponent_pool, self.rng)
             eval_consumer = self.consumer
             if opponent:
                 self.log(f"Designer sampled consumer opponent: {opponent.name} ({opponent.elo:.1f})")
@@ -294,6 +317,14 @@ class TrainerEngine:
                         consumer_norm,
                         self.baseline_elo_k,
                     )
+                    hist_opp = float(row.get("consumer_vs_history_opp_elo", 0.0))
+                    if hist_opp > 0.0:
+                        self.elo.consumer, _ = update_elo(
+                            self.elo.consumer,
+                            hist_opp,
+                            consumer_norm,
+                            self.cfg.training.elo_k_factor,
+                        )
 
                 if "designer_reward" in row:
                     designer_score = float(row["designer_reward"])

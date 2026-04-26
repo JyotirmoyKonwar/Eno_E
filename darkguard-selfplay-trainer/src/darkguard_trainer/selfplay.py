@@ -45,3 +45,11 @@ def sample_opponent(active_elo: float, pool: list[OpponentEntry], rng: random.Ra
         choices.append(near[-1])  # stronger occasionally
     choices.append(rng.choice(pool))  # random historical
     return rng.choice(choices)
+
+
+def recent_opponents(pool: list[OpponentEntry], window: int) -> list[OpponentEntry]:
+    if not pool:
+        return []
+    if window <= 0:
+        return pool
+    return pool[-window:]

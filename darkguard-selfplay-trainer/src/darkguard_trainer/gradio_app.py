@@ -62,6 +62,7 @@ def _build_config(*values: Any) -> AppConfig:
         freeze_designer,
         replay_size,
         rollback_threshold,
+        historical_window,
         use_baseline,
         use_wandb,
     ) = values
@@ -95,6 +96,7 @@ def _build_config(*values: Any) -> AppConfig:
         freeze_designer=bool(freeze_designer),
         replay_buffer_size=_to_int(replay_size, cfg.training.replay_buffer_size),
         rollback_threshold=_to_float(rollback_threshold, cfg.training.rollback_threshold),
+        historical_window=_to_int(historical_window, cfg.training.historical_window),
         use_baseline=bool(use_baseline),
         use_wandb=bool(use_wandb) or bool(cfg.connection.wandb_token),
     )
@@ -213,6 +215,7 @@ def build_app() -> gr.Blocks:
                 freeze_designer = gr.Checkbox(label="Freeze Designer", value=False)
                 replay_size = gr.Number(label="Replay Buffer Size", value=50, precision=0)
                 rollback_threshold = gr.Number(label="Rollback Threshold", value=0.2)
+                historical_window = gr.Number(label="Historical Window (last N snapshots)", value=8, precision=0)
                 use_baseline = gr.Checkbox(label="Use Eno_E Baseline", value=True)
                 use_wandb = gr.Checkbox(label="Use Weights & Biases", value=True)
 
@@ -241,6 +244,7 @@ def build_app() -> gr.Blocks:
             freeze_designer,
             replay_size,
             rollback_threshold,
+            historical_window,
             use_baseline,
             use_wandb,
         ]
