@@ -242,6 +242,9 @@ class DarkGuardEnvironment:
             if not target or target not in elements:
                 reward_ctx.was_invalid = True
                 ep.last_action_result = "inspect requires a visible target_id."
+            elif target in ep.inspected_targets:
+                reward_ctx.was_invalid = True
+                ep.last_action_result = f"{target} already inspected in this episode."
             else:
                 reward_ctx.inspected_new_target = target not in ep.inspected_targets
                 ep.inspected_targets.add(target)
@@ -301,6 +304,24 @@ class DarkGuardEnvironment:
     def _observation(self, reward: float, reward_breakdown: dict[str, float]) -> dict[str, Any]:
         ep = self._require_episode()
         screen = ep.task.screens[ep.screen_id]
+        elements = list(screen.elements)
+        allowed_actions: list[str] = []
+        clickable = [e for e in elements if e.enabled and e.type in {"button", "link", "checkbox", "toggle"}]
+        togglable = [e for e in elements if e.enabled and e.type in {"checkbox", "toggle"}]
+        inspectable = [e for e in elements if e.id not in ep.inspected_targets]
+        flaggable = [e for e in elements if e.id not in ep.flagged_targets]
+        if inspectable:
+            allowed_actions.append(ActionType.INSPECT.value)
+        if clickable:
+            allowed_actions.append(ActionType.CLICK.value)
+        if togglable:
+            allowed_actions.append(ActionType.TOGGLE.value)
+        if flaggable:
+            allowed_actions.append(ActionType.FLAG.value)
+        if "back" in screen.transitions:
+            allowed_actions.append(ActionType.GO_BACK.value)
+        if screen.terminal:
+            allowed_actions.append(ActionType.SUBMIT.value)
         obs = DarkGuardObservation(
             episode_id=ep.episode_id,
             task_id=ep.task.task_id,
@@ -308,7 +329,7 @@ class DarkGuardEnvironment:
             instruction=ep.task.instruction,
             visible_summary=screen.description,
             elements=screen.elements,
-            allowed_actions=ALLOWED_ACTIONS,
+            allowed_actions=allowed_actions,
             step_count=ep.step_count,
             max_steps=ep.max_steps,
             reward=reward,

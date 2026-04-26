@@ -127,12 +127,14 @@ class TrainerEngine:
             invalid.append(result.invalid_action_rate)
             fp.append(result.false_positive_rate)
             self.archive.add(result.trace)
-            self.consumer.improve(0.01)
+            self.consumer.record_reward(result.total_reward)
+        ppo_loss = self.consumer.ppo_update()
         return {
             "mean_reward": mean(rewards) if rewards else 0.0,
             "safe_rate": mean(safe) if safe else 0.0,
             "invalid_rate": mean(invalid) if invalid else 0.0,
             "fp_rate": mean(fp) if fp else 0.0,
+            "consumer_ppo_loss": ppo_loss,
         }
 
     def _train_designer_phase(self, round_idx: int) -> dict[str, float]:
@@ -155,11 +157,13 @@ class TrainerEngine:
             rewards.append(score)
             validity.append(1.0 if episode_cfg else 0.0)
             challenge.append(float(trace.get("challenge_delta", 0.0)))
-            self.designer.improve(0.008 if score > 0 else -0.005)
+            self.designer.record_reward(score)
+        ppo_loss = self.designer.ppo_update()
         return {
             "designer_reward": mean(rewards) if rewards else 0.0,
             "designer_validity": mean(validity) if validity else 0.0,
             "designer_challenge": mean(challenge) if challenge else 0.0,
+            "designer_ppo_loss": ppo_loss,
         }
 
     def _snapshot_phase(self, round_idx: int, metric: dict[str, float]) -> None:
@@ -229,8 +233,10 @@ class TrainerEngine:
                     )
                     ok = self._stability_guard(eval_summary.mean_reward)
                     if not ok:
-                        self.consumer.improve(-0.05)
-                        self.designer.improve(-0.02)
+                        self.consumer.record_reward(-0.5)
+                        self.designer.record_reward(-0.2)
+                        self.consumer.ppo_update()
+                        self.designer.ppo_update()
                         self.log("Rollback guard triggered: performance degraded on holdout.")
                 else:
                     self._snapshot_phase(round_idx, row)
