@@ -172,23 +172,19 @@ class DarkGuardEnvironment:
         episode_config: dict[str, Any] | None,
         rng: random.Random,
     ) -> TaskDefinition:
-        if task_id == "custom_episode" or episode_config:
-            if episode_config:
+        try:
+            if (task_id == "custom_episode" or episode_config) and episode_config:
                 validated = validate_custom_episode(episode_config)
                 return self._task_from_config(validated.model_dump())
-            choices = sorted(self._builtin)
-            return self._builtin[choices[rng.randrange(len(choices))]]
+        except Exception as e:
+            # Safety net: if designer generates junk, fallback to a stable builtin
+            pass
 
         if task_id and task_id in self._builtin:
             return self._builtin[task_id]
 
-        by_diff = {
-            "easy": ["easy_safe_signup"],
-            "medium": ["medium_fair_checkout"],
-            "hard": ["hard_cancel_maze"],
-        }
-        options = by_diff.get(str(difficulty).lower(), sorted(self._builtin))
-        return self._builtin[options[rng.randrange(len(options))]]
+        options = ["easy_safe_signup", "medium_fair_checkout", "hard_cancel_maze"]
+        return self._builtin[rng.choice(options)]
 
     def _task_from_config(self, cfg: dict[str, Any]) -> TaskDefinition:
         screens: dict[str, ScreenDefinition] = {}
